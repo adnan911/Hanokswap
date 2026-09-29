@@ -1,0 +1,10 @@
+{
+  "_format": "hh-sol-artifact-1",
+  "contractName": "SafeERC20",
+  "sourceName": "contracts/ArcFactoryV2_v3.sol",
+  "abi": [],
+  "bytecode": "0x6080806040523460175760399081601c823930815050f35b5f80fdfe5f80fdfea2646970667358221220ff6d84fbca9fd3841d3debdc270b182717a756ccdc43850165f462d79dc33ce164736f6c634300081a0033",
+  "deployedBytecode": "0x5f80fdfea2646970667358221220ff6d84fbca9fd3841d3debdc270b182717a756ccdc43850165f462d79dc33ce164736f6c634300081a0033",
+  "linkReferences": {},
+  "deployedLinkReferences": {}
+}

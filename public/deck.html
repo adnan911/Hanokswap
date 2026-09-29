@@ -1,0 +1,406 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<title>FlowFi — Live on Arc Mainnet</title>
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link href="https://fonts.googleapis.com/css2?family=Space+Grotesk:wght@400;500;600;700&family=Inter:wght@400;500;600&family=JetBrains+Mono:wght@400;500&display=swap" rel="stylesheet">
+<style>
+  :root{
+    --bg: #F6F5FC;
+    --ink: #17162B;
+    --ink-soft: #55516F;
+    --violet: #6D4FE0;
+    --violet-deep: #4C34B8;
+    --mint: #17A673;
+    --card: #FFFFFF;
+    --line: #E4E0F5;
+    --lavender-2: #EFEBFC;
+    --amber: #D98A2B;
+  }
+  *{box-sizing:border-box; margin:0; padding:0;}
+  html,body{height:100%; overflow:hidden;}
+  body{
+    background:var(--bg);
+    color:var(--ink);
+    font-family:'Inter',sans-serif;
+    position:relative;
+  }
+  /* ambient arc motif */
+  .ambient{position:fixed; inset:0; pointer-events:none; z-index:0; overflow:hidden;}
+  .ambient svg{position:absolute; top:-10%; right:-15%; width:70vw; height:70vw; opacity:.5;}
+
+  .deck{ position:relative; z-index:1; height:100vh; width:100vw; }
+  .slide{
+    position:absolute; inset:0;
+    display:none;
+    padding: 56px 72px;
+    flex-direction:column;
+  }
+  .slide.active{ display:flex; animation: rise .5s ease; }
+  @keyframes rise{ from{opacity:0; transform:translateY(14px);} to{opacity:1; transform:translateY(0);} }
+
+  .eyebrow{
+    font-family:'JetBrains Mono', monospace;
+    font-size:12px; letter-spacing:.14em; text-transform:uppercase;
+    color:var(--violet-deep); font-weight:500;
+    display:flex; align-items:center; gap:10px;
+  }
+  .eyebrow .dot{width:6px; height:6px; border-radius:50%; background:var(--mint); box-shadow:0 0 0 3px rgba(23,166,115,.15);}
+
+  h1.hero-title{
+    font-family:'Space Grotesk', sans-serif; font-weight:700;
+    font-size:clamp(38px, 5vw, 62px); line-height:1.04; letter-spacing:-0.02em;
+    margin-top:14px; max-width:900px;
+  }
+  h2.slide-title{
+    font-family:'Space Grotesk', sans-serif; font-weight:600;
+    font-size:clamp(26px,3vw,36px); letter-spacing:-0.01em;
+    margin-top:10px; max-width:640px;
+  }
+  p.lede{ color:var(--ink-soft); font-size:16px; line-height:1.55; max-width:520px; margin-top:14px;}
+
+  .accent-word{ color:var(--violet); }
+
+  /* ===== COVER ===== */
+  .cover-body{ flex:1; display:flex; flex-direction:column; justify-content:center; }
+  .brandmark{ display:flex; align-items:center; gap:10px; }
+  .brandmark .glyph{
+    width:34px; height:34px; border-radius:9px;
+    background:linear-gradient(135deg,var(--violet),var(--violet-deep));
+    display:flex; align-items:center; justify-content:center;
+    box-shadow: 0 6px 16px rgba(109,79,224,.35);
+  }
+  .brandmark .glyph svg{ width:18px; height:18px; }
+  .brandmark span{ font-family:'Space Grotesk',sans-serif; font-weight:700; font-size:18px; }
+  .brandmark small{ font-family:'JetBrains Mono',monospace; font-size:10px; color:var(--violet-deep); letter-spacing:.1em; display:block; margin-top:-2px;}
+
+  .cover-foot{ display:flex; justify-content:space-between; align-items:flex-end; }
+  .cover-tags{ display:flex; gap:10px; flex-wrap:wrap; margin-top:26px; }
+  .tag{
+    font-family:'JetBrains Mono',monospace; font-size:11.5px; padding:7px 12px;
+    border:1px solid var(--line); border-radius:20px; color:var(--ink-soft); background:var(--card);
+  }
+  .cover-meta{ text-align:right; font-family:'JetBrains Mono',monospace; font-size:12px; color:var(--ink-soft); line-height:1.8;}
+  .cover-meta b{ color:var(--ink); font-weight:500; }
+
+  /* ===== PRODUCT SLIDE LAYOUT ===== */
+  .product-slide{ flex:1; display:grid; grid-template-columns: 1.15fr 1.55fr; gap:44px; align-items:center; margin-top:18px; min-height:0; }
+  .panel-left{ display:flex; flex-direction:column; height:100%; justify-content:center; min-width:0; }
+  .stat-row{ display:flex; gap:10px; margin-top:26px; flex-wrap:wrap; }
+  .stat{
+    background:var(--card); border:1px solid var(--line); border-radius:12px;
+    padding:12px 14px; min-width:108px;
+  }
+  .stat .v{ font-family:'JetBrains Mono',monospace; font-weight:500; font-size:17px; color:var(--violet-deep); }
+  .stat .l{ font-size:10.5px; color:var(--ink-soft); text-transform:uppercase; letter-spacing:.06em; margin-top:3px; }
+
+  .callout{
+    margin-top:22px; display:flex; gap:10px; align-items:flex-start;
+    background: var(--lavender-2); border:1px solid var(--line); border-radius:12px; padding:14px 16px;
+  }
+  .callout .ic{ color:var(--violet); font-size:14px; margin-top:1px; }
+  .callout p{ font-size:13.5px; color:var(--ink-soft); line-height:1.5; }
+  .callout b{ color:var(--ink); font-weight:600;}
+
+  /* browser chrome frame for screenshots */
+  .browser-frame{
+    background:var(--card); border-radius:16px; border:1px solid var(--line);
+    box-shadow: 0 30px 60px -20px rgba(76,52,184,.28), 0 8px 24px -10px rgba(23,22,43,.12);
+    overflow:hidden; height:100%; display:flex; flex-direction:column;
+  }
+  .browser-bar{
+    display:flex; align-items:center; gap:8px; padding:10px 14px;
+    background:linear-gradient(180deg,#FBFAFF,#F3F1FC); border-bottom:1px solid var(--line);
+  }
+  .browser-bar .dots{ display:flex; gap:6px; }
+  .browser-bar .dots span{ width:9px; height:9px; border-radius:50%; background:#DEDAF0; }
+  .browser-bar .url{
+    flex:1; margin-left:8px; font-family:'JetBrains Mono',monospace; font-size:11px; color:var(--ink-soft);
+    background:#fff; border:1px solid var(--line); border-radius:7px; padding:4px 10px;
+  }
+  .frame-media{ flex:1; overflow:hidden; background:#F6F5FC; display:flex; align-items:flex-start; justify-content:center;}
+  .frame-media img{ width:100%; display:block; }
+
+  /* ===== CLOSING SLIDE ===== */
+  .closing-grid{ flex:1; display:grid; grid-template-columns: 1fr 1fr; gap:40px; margin-top:24px; }
+  .stack-list{ display:flex; flex-direction:column; gap:14px; margin-top:20px; }
+  .stack-item{ display:flex; gap:12px; align-items:flex-start; }
+  .stack-item .n{ font-family:'JetBrains Mono',monospace; font-size:12px; color:var(--violet); width:22px; padding-top:2px;}
+  .stack-item p{ font-size:14px; color:var(--ink-soft); line-height:1.5; }
+  .stack-item b{ color:var(--ink); font-weight:600; }
+  .link-card{ background:var(--card); border:1px solid var(--line); border-radius:14px; padding:20px; }
+  .link-card h3{ font-family:'Space Grotesk',sans-serif; font-size:15px; margin-bottom:12px; }
+  .link-row{ display:flex; justify-content:space-between; align-items:center; padding:9px 0; border-top:1px solid var(--line); font-size:13px; }
+  .link-row:first-of-type{ border-top:none; }
+  .link-row span:first-child{ color:var(--ink-soft); }
+  .link-row span:last-child{ font-family:'JetBrains Mono',monospace; color:var(--violet-deep); }
+
+  /* ===== NAV ===== */
+  .nav{
+    position:fixed; bottom:26px; left:50%; transform:translateX(-50%); z-index:5;
+    display:flex; align-items:center; gap:14px;
+    background:rgba(255,255,255,.85); backdrop-filter: blur(10px);
+    border:1px solid var(--line); border-radius:100px; padding:8px 10px;
+    box-shadow: 0 10px 30px -10px rgba(23,22,43,.15);
+  }
+  .nav button{
+    width:32px; height:32px; border-radius:50%; border:none; background:transparent;
+    cursor:pointer; display:flex; align-items:center; justify-content:center; color:var(--ink-soft);
+    transition:.15s;
+  }
+  .nav button:hover{ background:var(--lavender-2); color:var(--violet-deep); }
+  .nav button:disabled{ opacity:.3; cursor:default; }
+  .nav button:disabled:hover{ background:transparent; }
+  .progress-arc{ display:flex; align-items:center; gap:5px; }
+  .progress-arc .seg{ width:14px; height:4px; border-radius:3px; background:var(--line); transition:.2s; cursor:pointer;}
+  .progress-arc .seg.done{ background:var(--violet); }
+  .progress-arc .seg.now{ background:var(--violet-deep); width:22px; }
+  .counter{ font-family:'JetBrains Mono',monospace; font-size:11.5px; color:var(--ink-soft); padding:0 4px; min-width:44px; text-align:center;}
+
+  .kbd-hint{
+    position:fixed; top:26px; right:32px; z-index:5;
+    font-family:'JetBrains Mono',monospace; font-size:11px; color:var(--ink-soft);
+    display:flex; align-items:center; gap:6px; opacity:.6;
+  }
+  .kbd-hint kbd{ border:1px solid var(--line); border-radius:5px; padding:2px 6px; background:var(--card); }
+
+  @media (max-width: 900px){
+    .product-slide{ grid-template-columns: 1fr; }
+    .closing-grid{ grid-template-columns: 1fr; }
+  }
+</style>
+</head>
+<body>
+
+<div class="ambient">
+  <svg viewBox="0 0 600 600" xmlns="http://www.w3.org/2000/svg">
+    <defs>
+      <linearGradient id="arcGrad" x1="0" y1="0" x2="1" y2="1">
+        <stop offset="0%" stop-color="#6D4FE0" stop-opacity="0.16"/>
+        <stop offset="100%" stop-color="#6D4FE0" stop-opacity="0"/>
+      </linearGradient>
+    </defs>
+    <path d="M 550 50 A 500 500 0 0 1 50 550" stroke="url(#arcGrad)" stroke-width="90" fill="none"/>
+    <path d="M 560 120 A 440 440 0 0 1 120 560" stroke="#6D4FE0" stroke-opacity="0.06" stroke-width="2" fill="none"/>
+  </svg>
+</div>
+
+<div class="kbd-hint"><kbd>←</kbd><kbd>→</kbd> navigate</div>
+
+<div class="deck" id="deck">
+
+  <!-- SLIDE 0: COVER -->
+  <section class="slide active">
+    <div class="brandmark">
+      <div class="glyph"><svg viewBox="0 0 24 24" fill="none" xmlns="http://www.w3.org/2000/svg"><path d="M12 2 L22 12 L12 22 L2 12 Z" fill="white" fill-opacity="0.95"/></svg></div>
+      <div><span>FlowFi</span><small>ARC MAINNET</small></div>
+    </div>
+    <div class="cover-body">
+      <div class="eyebrow"><span class="dot"></span> LIVE ON ARC MAINNET</div>
+      <h1 class="hero-title">Do more with USDC.<br><span class="accent-word">All in one flow.</span></h1>
+      <p class="lede" style="max-width:640px; font-size:17px;">Send, bridge, and swap USDC on Arc Mainnet from one fast, secure app. Every transaction is signed by your own wallet, never by FlowFi.</p>
+      <div class="cover-tags">
+        <div class="tag">Native USDC</div>
+        <div class="tag">Circle CCTP V2</div>
+        <div class="tag">LI.FI routing</div>
+        <div class="tag">Self-custody</div>
+        <div class="tag">Live on Arc Mainnet</div>
+      </div>
+    </div>
+    <div class="cover-foot">
+      <div style="font-family:'JetBrains Mono',monospace; font-size:12px; color:var(--ink-soft);">Real funds &middot; Self-custody only</div>
+      <div class="cover-meta">
+        <div><b>Kazım</b> — sekuler.eth</div>
+        <div>github.com/sekuler/flowfi</div>
+        <div>flowfi.finance</div>
+      </div>
+    </div>
+  </section>
+
+  <section class="slide">
+    <div class="eyebrow"><span class="dot"></span> 01 &middot; ENTRY</div>
+    <h2 class="slide-title">Landing: connect a wallet, or look around first.</h2>
+    <div class="product-slide">
+      <div class="panel-left">
+        <p class="lede">Connect with a browser wallet or a mobile wallet through WalletConnect, or explore the app without connecting at all. Nothing moves until you sign it yourself.</p>
+        <div class="callout">
+          <span class="ic">◆</span>
+          <p><b>Self-custody, always:</b> FlowFi never holds a key, a balance, or signing authority over your funds. It is a frontend and a router, not a counterparty.</p>
+        </div>
+        <div class="stat-row"><div class="stat"><div class="v">0</div><div class="l">Keys FlowFi holds</div></div><div class="stat"><div class="v">2</div><div class="l">Ways to connect</div></div></div>
+      </div>
+      <div class="browser-frame">
+        <div class="browser-bar"><div class="dots"><span></span><span></span><span></span></div><div class="url">flowfi.finance</div></div>
+        <div class="frame-media"><img src="screenshots/1-Landing.jpg" alt="FlowFi landing page" loading="lazy"></div>
+      </div>
+    </div>
+  </section>
+
+  <section class="slide">
+    <div class="eyebrow"><span class="dot"></span> 02 &middot; DAILY DRIVER</div>
+    <h2 class="slide-title">Home: net worth, assets, and a Copilot that reads your wallet.</h2>
+    <div class="product-slide">
+      <div class="panel-left">
+        <p class="lede">Your net worth in dollars, the assets you hold (USDC, EURC, USYC, cirBTC), and one-tap shortcuts to Bridge, Swap, and Add funds. Ask your wallet answers questions about your balance and activity, and recent activity is written in plain language.</p>
+        <div class="callout">
+          <span class="ic">◆</span>
+          <p><b>Read-only by design:</b> the Copilot on mainnet answers from your on-chain data and never signs or executes anything itself.</p>
+        </div>
+        <div class="stat-row"><div class="stat"><div class="v">4</div><div class="l">Assets tracked</div></div><div class="stat"><div class="v">0</div><div class="l">Transactions the Copilot signs</div></div></div>
+      </div>
+      <div class="browser-frame">
+        <div class="browser-bar"><div class="dots"><span></span><span></span><span></span></div><div class="url">flowfi.finance</div></div>
+        <div class="frame-media"><img src="screenshots/2-Home.jpg" alt="FlowFi Home" loading="lazy"></div>
+      </div>
+    </div>
+  </section>
+
+  <section class="slide">
+    <div class="eyebrow"><span class="dot"></span> 03 &middot; CROSS-CHAIN</div>
+    <h2 class="slide-title">Bridge: LI.FI for any token, Circle CCTP V2 for native USDC.</h2>
+    <div class="product-slide">
+      <div class="panel-left">
+        <p class="lede">Any token tab: LI.FI compares routes so you pick the fastest or cheapest. Native USDC tab: FlowFi calls Circle's own CCTP V2 contracts directly. USDC is burned on the source chain, Circle attests, and native USDC is minted on Arc, with no wrapped token.</p>
+        <div class="callout">
+          <span class="ic">◆</span>
+          <p><b>Built to be safe to interrupt:</b> if a transfer stops after the burn, it can be resumed without burning a second time. The expected wait for each source chain comes from Circle's own finality docs.</p>
+        </div>
+        <div class="stat-row"><div class="stat"><div class="v">18</div><div class="l">Source chains, native USDC</div></div><div class="stat"><div class="v">0</div><div class="l">FlowFi contracts on the path</div></div></div>
+      </div>
+      <div class="browser-frame">
+        <div class="browser-bar"><div class="dots"><span></span><span></span><span></span></div><div class="url">flowfi.finance</div></div>
+        <div class="frame-media"><img src="screenshots/3-Bridge.jpg" alt="FlowFi Bridge" loading="lazy"></div>
+      </div>
+    </div>
+  </section>
+
+  <section class="slide">
+    <div class="eyebrow"><span class="dot"></span> 04 &middot; CORE TRADING</div>
+    <h2 class="slide-title">Swap: same-chain on Arc, routed through LI.FI.</h2>
+    <div class="product-slide">
+      <div class="panel-left">
+        <p class="lede">Swap opens on USDC to EURC and lists the tokens LI.FI supports on Arc as quick picks. FlowFi is built to be a router, not a market maker: it sends you to real, deep liquidity instead of holding its own reserves.</p>
+        <div class="callout">
+          <span class="ic">◆</span>
+          <p><b>No FlowFi contract touches your funds:</b> the route, the swap, and the signature all happen with third-party infrastructure that was already live, and you sign in your own wallet.</p>
+        </div>
+        <div class="stat-row"><div class="stat"><div class="v">USDC → EURC</div><div class="l">Default pair</div></div><div class="stat"><div class="v">0</div><div class="l">FlowFi contracts on the path</div></div></div>
+      </div>
+      <div class="browser-frame">
+        <div class="browser-bar"><div class="dots"><span></span><span></span><span></span></div><div class="url">flowfi.finance</div></div>
+        <div class="frame-media"><img src="screenshots/4-Swap.jpg" alt="FlowFi Swap" loading="lazy"></div>
+      </div>
+    </div>
+  </section>
+
+  <section class="slide">
+    <div class="eyebrow"><span class="dot"></span> 05 &middot; ANALYTICS</div>
+    <h2 class="slide-title">Dashboard: net worth, allocation, and activity mix.</h2>
+    <div class="product-slide">
+      <div class="panel-left">
+        <p class="lede">Balances are read straight from the chain and activity from Arc's official Etherscan-run explorer. The portfolio split shows where your money sits, and the activity mix shows what you actually do: receive, send, approve, swap, bridge.</p>
+        <div class="callout">
+          <span class="ic">◆</span>
+          <p><b>No invented charts:</b> the net-worth chart and 7-day change are built from daily snapshots saved in your own browser. Until enough days exist, the dashboard says "Not enough history" instead of drawing a curve.</p>
+        </div>
+        <div class="stat-row"><div class="stat"><div class="v">Live</div><div class="l">Balances from the chain</div></div><div class="stat"><div class="v">0</div><div class="l">Made-up data points</div></div></div>
+      </div>
+      <div class="browser-frame">
+        <div class="browser-bar"><div class="dots"><span></span><span></span><span></span></div><div class="url">flowfi.finance</div></div>
+        <div class="frame-media"><img src="screenshots/5-Dashboard.jpg" alt="FlowFi Dashboard" loading="lazy"></div>
+      </div>
+    </div>
+  </section>
+
+  <section class="slide">
+    <div class="eyebrow"><span class="dot"></span> 06 &middot; TRANSPARENCY</div>
+    <h2 class="slide-title">History: every transaction and token transfer, checkable.</h2>
+    <div class="product-slide">
+      <div class="panel-left">
+        <p class="lede">History lists everything that happened on your address, including what you did in other apps: sends, receives, approvals, swaps, bridge mints, and aggregator routes, with the amount and a link to the explorer on every row.</p>
+        <div class="callout">
+          <span class="ic">◆</span>
+          <p><b>Receipts, not promises:</b> a swap made through another app shows up as tokens leaving and arriving, so anything on this page can be checked against the block explorer.</p>
+        </div>
+        <div class="stat-row"><div class="stat"><div class="v">1-click</div><div class="l">From any row to the explorer</div></div><div class="stat"><div class="v">Arc</div><div class="l">Mainnet, real funds</div></div></div>
+      </div>
+      <div class="browser-frame">
+        <div class="browser-bar"><div class="dots"><span></span><span></span><span></span></div><div class="url">flowfi.finance</div></div>
+        <div class="frame-media"><img src="screenshots/6-History.jpg" alt="FlowFi History" loading="lazy"></div>
+      </div>
+    </div>
+  </section>
+
+  <!-- SLIDE 7: CLOSING -->
+  <section class="slide">
+    <div class="eyebrow"><span class="dot"></span> 07 &middot; SUMMARY</div>
+    <h2 class="slide-title" style="max-width:100%;">Built on Arc, on Circle's rails, self-custody end to end.</h2>
+    <div class="closing-grid">
+      <div>
+        <p class="lede" style="max-width:100%;">FlowFi is live on Arc Mainnet with real funds. Everything you saw is the running product, and every claim can be checked on-chain.</p>
+        <div class="stack-list">
+          <div class="stack-item"><div class="n">01</div><p><b>Bridge</b> — LI.FI for any token, Circle CCTP V2 for native USDC</p></div>
+          <div class="stack-item"><div class="n">02</div><p><b>Swap</b> — same-chain on Arc through LI.FI</p></div>
+          <div class="stack-item"><div class="n">03</div><p><b>Wallet</b> — browser wallets and WalletConnect, signed by you</p></div>
+          <div class="stack-item"><div class="n">04</div><p><b>Insight</b> — Home, Dashboard, and History, all read from the chain</p></div>
+          <div class="stack-item"><div class="n">05</div><p><b>Testnet showcase</b> — Circle Wallet, Token Launch, and Liquidity Pools stay live with no real funds</p></div>
+        </div>
+      </div>
+      <div class="link-card">
+        <h3>Verify it yourself</h3>
+        <div class="link-row"><span>Live app</span><span>flowfi.finance</span></div>
+        <div class="link-row"><span>Repository</span><span>github.com/sekuler/flowfi</span></div>
+        <div class="link-row"><span>Explorer</span><span>arc.etherscan.io</span></div>
+        <div class="link-row"><span>Testnet faucet</span><span>faucet.circle.com</span></div>
+        <div class="link-row"><span>Network</span><span>Arc Mainnet</span></div>
+        <div class="link-row"><span>Builder</span><span>@sekulereth</span></div>
+      </div>
+    </div>
+  </section>
+</div>
+
+<div class="nav">
+  <button id="prevBtn" onclick="go(-1)">‹</button>
+  <div class="progress-arc" id="progress"></div>
+  <span class="counter" id="counter">1 / 15</span>
+  <button id="nextBtn" onclick="go(1)">›</button>
+</div>
+
+<script>
+  const slides = document.querySelectorAll('.slide');
+  const progress = document.getElementById('progress');
+  const counter = document.getElementById('counter');
+  let current = 0;
+
+  slides.forEach((s,i)=>{
+    const seg = document.createElement('div');
+    seg.className = 'seg';
+    seg.onclick = ()=> setSlide(i);
+    progress.appendChild(seg);
+  });
+
+  function render(){
+    slides.forEach((s,i)=> s.classList.toggle('active', i===current));
+    document.querySelectorAll('.seg').forEach((seg,i)=>{
+      seg.classList.remove('done','now');
+      if(i < current) seg.classList.add('done');
+      if(i === current) seg.classList.add('now');
+    });
+    counter.textContent = (current+1)+' / '+slides.length;
+    document.getElementById('prevBtn').disabled = current===0;
+    document.getElementById('nextBtn').disabled = current===slides.length-1;
+  }
+  function setSlide(i){ current = Math.max(0, Math.min(slides.length-1, i)); render(); }
+  function go(delta){ setSlide(current+delta); }
+
+  document.addEventListener('keydown', (e)=>{
+    if(e.key === 'ArrowRight' || e.key === ' ') go(1);
+    if(e.key === 'ArrowLeft') go(-1);
+  });
+
+  render();
+</script>
+</body>
+</html>

@@ -1,0 +1,16 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 100 100">
+  <defs>
+    <linearGradient id="hanok-favicon" x1="10" y1="20" x2="90" y2="85" gradientUnits="userSpaceOnUse">
+      <stop offset="0%" stop-color="#D95333" />
+      <stop offset="100%" stop-color="#EA7A5E" />
+    </linearGradient>
+  </defs>
+  <rect width="100" height="100" rx="24" fill="#353733" />
+  <path d="M16 46 Q 50 30 84 46 Q 50 20 16 46 Z" fill="url(#hanok-favicon)" />
+  <path d="M22 43 Q 50 24 78 43" stroke="#FFFFFF" stroke-width="3" stroke-linecap="round" fill="none" />
+  <rect x="28" y="47" width="5" height="25" rx="2" fill="#D95333" />
+  <rect x="67" y="47" width="5" height="25" rx="2" fill="#D95333" />
+  <rect x="47" y="47" width="6" height="25" rx="2" fill="#FAF9F5" opacity="0.9" />
+  <path d="M18 72 H82" stroke="#D95333" stroke-width="4" stroke-linecap="round" />
+  <circle cx="50" cy="24" r="3.5" fill="#D95333" />
+</svg>

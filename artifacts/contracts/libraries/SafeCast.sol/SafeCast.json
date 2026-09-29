@@ -1,0 +1,10 @@
+{
+  "_format": "hh-sol-artifact-1",
+  "contractName": "SafeCast",
+  "sourceName": "contracts/libraries/SafeCast.sol",
+  "abi": [],
+  "bytecode": "0x6080806040523460175760399081601c823930815050f35b5f80fdfe5f80fdfea2646970667358221220dd817f61b1cc5e3acb62ccd68ad0aea4678f0bb16f240813b7d04f06a64b536f64736f6c634300081a0033",
+  "deployedBytecode": "0x5f80fdfea2646970667358221220dd817f61b1cc5e3acb62ccd68ad0aea4678f0bb16f240813b7d04f06a64b536f64736f6c634300081a0033",
+  "linkReferences": {},
+  "deployedLinkReferences": {}
+}

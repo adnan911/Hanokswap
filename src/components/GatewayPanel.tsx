@@ -1,0 +1,651 @@
+import { useState, useEffect } from "react";
+import { parseUnits, erc20Abi } from "viem";
+import { createWalletClient, createPublicClient, custom, http } from "viem";
+import { sepolia, baseSepolia, arbitrumSepolia } from "viem/chains";
+import { arcTestnet, ARC_CHAIN_ID_HEX } from "../chains";
+import { waitForSuccess } from "../txHelpers";
+import type { EIP1193Provider } from "viem";
+import { Zap, RefreshCw, ArrowRight, ChevronDown, Wallet, CircleDollarSign } from "lucide-react";
+import { ChainIcon } from "./ChainIcon";
+import { useIsMobile } from "../useIsMobile";
+import { showToast } from "../toast";
+import { getCircleWallet, circleContractCall, circleContractCallAndWait, getWalletIdForChain, signTypedDataWithCircleWallet, type CircleWalletInfo, type CircleChain } from "../circleWalletHelpers";
+import { buildBurnIntentTypedData, requestTransferAttestation, toCircleTypedDataJSON, GATEWAY_MINTER_ADDRESS, GATEWAY_MINTER_ABI, GATEWAY_WALLET_READ_ABI } from "../gatewayTransfer";
+import {
+  GATEWAY_WALLET_ADDRESS,
+  GATEWAY_WALLET_ABI,
+  GATEWAY_DOMAINS,
+  getUnifiedGatewayBalance,
+  type GatewayChainKey,
+} from "../gatewayHelpers";
+import { CHAINS as BRIDGE_CHAINS } from "./BridgeForm";
+
+const CIRCLE_CHAIN_FOR: Record<GatewayChainKey, CircleChain> = {
+  "Arc Testnet": "ARC-TESTNET",
+  "Ethereum Sepolia": "ETH-SEPOLIA",
+  "Base Sepolia": "BASE-SEPOLIA",
+  "Arbitrum Sepolia": "ARB-SEPOLIA",
+};
+
+// Same source as BridgeForm.tsx and UnifiedBalance.tsx — was previously an
+// independent copy here, a third place this exact set of addresses could
+// silently drift out of sync.
+const CHAIN_USDC: Record<GatewayChainKey, `0x${string}`> = {
+  "Arc Testnet": BRIDGE_CHAINS["Arc Testnet"].usdc,
+  "Ethereum Sepolia": BRIDGE_CHAINS["Ethereum Sepolia"].usdc,
+  "Base Sepolia": BRIDGE_CHAINS["Base Sepolia"].usdc,
+  "Arbitrum Sepolia": BRIDGE_CHAINS["Arbitrum Sepolia"].usdc,
+};
+
+const CHAIN_OBJECT = {
+  "Arc Testnet": arcTestnet,
+  "Ethereum Sepolia": sepolia,
+  "Base Sepolia": baseSepolia,
+  "Arbitrum Sepolia": arbitrumSepolia,
+} as const;
+
+const CHAIN_ID_HEX: Record<GatewayChainKey, string> = {
+  "Arc Testnet": ARC_CHAIN_ID_HEX,
+  "Ethereum Sepolia": "0xaa36a7",
+  "Base Sepolia": "0x14a34",
+  "Arbitrum Sepolia": "0x66eee",
+};
+
+function chainIdDecimal(hex: string): number {
+  return parseInt(hex, 16);
+}
+
+function GatewayChainSelect({ value, onChange, open, setOpen, label, disabled }: {
+  value: GatewayChainKey; onChange: (k: GatewayChainKey) => void;
+  open: boolean; setOpen: (v: boolean) => void; label: string; disabled?: boolean;
+}) {
+  return (
+    <div style={{ position: "relative" }}>
+      <button onClick={() => setOpen(!open)} disabled={disabled}
+        style={{ width: "100%", display: "flex", alignItems: "center", justifyContent: "space-between", padding: "0.65rem 0.85rem", borderRadius: 12, border: "1px solid rgba(226, 224, 200, 0.12)", background: "rgba(20, 28, 25, 0.6)", cursor: disabled ? "not-allowed" : "pointer", boxSizing: "border-box" }}>
+        <div style={{ display: "flex", alignItems: "center", gap: 9 }}>
+          <ChainIcon name={value} size={22} />
+          <div style={{ display: "flex", flexDirection: "column", alignItems: "flex-start" }}>
+            <span style={{ fontSize: 9.5, color: "#818C78", fontWeight: 700, letterSpacing: "0.3px" }}>{label}</span>
+            <span style={{ fontSize: 13, fontWeight: 700, color: "#E2E0C8" }}>{value}</span>
+          </div>
+        </div>
+        <ChevronDown size={15} color="#A6B49E" />
+      </button>
+      {open && (
+        <div style={{ position: "absolute", top: "calc(100% + 6px)", left: 0, right: 0, zIndex: 30, background: "rgba(16, 23, 20, 0.98)", border: "1px solid rgba(226, 224, 200, 0.18)", borderRadius: 12, padding: 6, boxShadow: "0 18px 40px rgba(0,0,0,0.5)", backdropFilter: "blur(20px)" }}>
+          {(Object.keys(GATEWAY_DOMAINS) as GatewayChainKey[]).map((k) => (
+            <button key={k} onClick={() => { onChange(k); setOpen(false); }}
+              style={{ width: "100%", display: "flex", alignItems: "center", gap: 9, padding: "0.55rem 0.7rem", borderRadius: 9, border: "none", background: k === value ? "rgba(166, 180, 158, 0.15)" : "transparent", cursor: "pointer", textAlign: "left" }}>
+              <ChainIcon name={k} size={20} />
+              <div style={{ display: "flex", flexDirection: "column", alignItems: "flex-start" }}>
+                <span style={{ fontSize: 12.5, fontWeight: 600, color: "#E2E0C8" }}>{k}</span>
+                <span className="flowfi-mono" style={{ fontSize: 9, color: "#818C78" }}>Chain ID: {chainIdDecimal(CHAIN_ID_HEX[k])}</span>
+              </div>
+            </button>
+          ))}
+        </div>
+      )}
+    </div>
+  );
+}
+
+interface Props {
+  provider: EIP1193Provider;
+  address: string;
+}
+
+export default function GatewayPanel({ provider, address }: Props) {
+  const isMobile = useIsMobile();
+  const [walletMode, setWalletMode] = useState<"browser" | "circle">("browser");
+  const [circleWallet, setCircleWallet] = useState<CircleWalletInfo | null>(null);
+  const [total, setTotal] = useState<number | null>(null);
+  const [byChain, setByChain] = useState<Record<string, number>>({});
+  const [pendingByChain, setPendingByChain] = useState<Record<string, number>>({});
+  const [loading, setLoading] = useState(true);
+  const [depositAmount, setDepositAmount] = useState("");
+  const [depositChain, setDepositChain] = useState<GatewayChainKey>("Arc Testnet");
+  const [walletBalanceOnDepositChain, setWalletBalanceOnDepositChain] = useState<number | null>(null);
+  const [depositing, setDepositing] = useState(false);
+  const [waitingForBalance, setWaitingForBalance] = useState(false);
+
+  // Instant transfer (burn on source, mint on destination, <500ms) — browser
+  // wallet only for now. Circle Wallet typed-data signing for transfers needs
+  // its own verified reference before being added here.
+  const [transferAmount, setTransferAmount] = useState("");
+  const [transferSource, setTransferSource] = useState<GatewayChainKey>("Arc Testnet");
+  const [transferDest, setTransferDest] = useState<GatewayChainKey>("Ethereum Sepolia");
+  const [transferRecipient, setTransferRecipient] = useState("");
+  const [transferring, setTransferring] = useState(false);
+  const [transferStatus, setTransferStatus] = useState("");
+  const [showTransferConfirm, setShowTransferConfirm] = useState(false);
+  const [transferSourceOpen, setTransferSourceOpen] = useState(false);
+  const [transferDestOpen, setTransferDestOpen] = useState(false);
+  const [depositChainOpen, setDepositChainOpen] = useState(false);
+
+  // The address whose Gateway balance we show/deposit against — the browser
+  // wallet's own address, or the Circle Developer-Controlled Wallet's
+  // address, depending on which mode is selected. Gateway tracks balances
+  // per-address with no concept of "the FlowFi user", so these two modes
+  // genuinely show different, separate balances.
+  const activeAddress = walletMode === "circle" ? circleWallet?.address ?? null : address;
+
+  useEffect(() => {
+    setCircleWallet(getCircleWallet());
+    const onChange = () => setCircleWallet(getCircleWallet());
+    window.addEventListener("circle-wallet-changed", onChange);
+    return () => window.removeEventListener("circle-wallet-changed", onChange);
+  }, []);
+
+  async function refresh() {
+    if (!activeAddress) { setTotal(0); setByChain({}); setPendingByChain({}); setLoading(false); return; }
+    setLoading(true);
+    const result = await getUnifiedGatewayBalance(activeAddress);
+    setTotal(result.total);
+    setByChain(result.byChain);
+    setPendingByChain(result.pendingByChain);
+    setLoading(false);
+  }
+
+  useEffect(() => {
+    refresh();
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [activeAddress]);
+
+  // Deposit pulls from the connected wallet's OWN on-chain USDC balance on
+  // the selected chain — a completely different number from the Gateway
+  // "unified balance" above. Showing it here directly heads off the exact
+  // confusion that caused a failed deposit: the unified balance being
+  // nonzero (elsewhere) says nothing about whether this wallet actually
+  // holds USDC on this specific chain to deposit in the first place.
+  useEffect(() => {
+    let cancelled = false;
+    async function checkWalletBalance() {
+      if (!activeAddress) { setWalletBalanceOnDepositChain(null); return; }
+      setWalletBalanceOnDepositChain(null);
+      try {
+        const client = createPublicClient({ chain: CHAIN_OBJECT[depositChain], transport: http() });
+        const raw = await client.readContract({
+          address: CHAIN_USDC[depositChain], abi: erc20Abi, functionName: "balanceOf", args: [activeAddress as `0x${string}`],
+        });
+        if (!cancelled) setWalletBalanceOnDepositChain(Number(raw) / 1e6);
+      } catch {
+        if (!cancelled) setWalletBalanceOnDepositChain(null);
+      }
+    }
+    checkWalletBalance();
+    return () => { cancelled = true; };
+  }, [depositChain, activeAddress]);
+
+  // After a deposit, the on-chain tx confirms quickly but Gateway's own
+  // backend needs additional time (source-chain finality + its own
+  // processing) before /v1/balances reflects it. A single delayed refresh
+  // is often too early — this checks every 4s, up to 60s, and stops as
+  // soon as the total genuinely increases.
+  async function pollForBalanceIncrease(previousTotal: number) {
+    setWaitingForBalance(true);
+    for (let attempt = 0; attempt < 120; attempt++) {
+      await new Promise((r) => setTimeout(r, 5000));
+      const target = walletMode === "circle" ? circleWallet?.address ?? null : address;
+      if (!target) break;
+      const result = await getUnifiedGatewayBalance(target);
+      if (result.total > previousTotal) {
+        setTotal(result.total);
+        setByChain(result.byChain);
+        setWaitingForBalance(false);
+        return;
+      }
+    }
+    setWaitingForBalance(false);
+    // Final refresh regardless, so the UI at least shows the latest known state.
+    refresh();
+  }
+
+  // Transfers don't raise the total (they only shift the byChain split), so
+  // this watches the DESTINATION chain's own balance specifically — a more
+  // accurate, faster signal than Circle's own transaction-status polling,
+  // which can lag behind the real on-chain/Gateway-ledger result.
+  async function pollForChainBalanceIncrease(chain: GatewayChainKey, previousChainBalance: number) {
+    setWaitingForBalance(true);
+    for (let attempt = 0; attempt < 60; attempt++) {
+      await new Promise((r) => setTimeout(r, 3000));
+      const target = walletMode === "circle" ? circleWallet?.address ?? null : address;
+      if (!target) break;
+      const result = await getUnifiedGatewayBalance(target);
+      if ((result.byChain[chain] ?? 0) > previousChainBalance) {
+        setTotal(result.total);
+        setByChain(result.byChain);
+        setWaitingForBalance(false);
+        showToast(`Transferred ${transferAmount} USDC to ${chain} — confirmed.`, "success");
+        return;
+      }
+    }
+    setWaitingForBalance(false);
+    refresh();
+  }
+
+  async function doDeposit() {
+    if (!depositAmount || Number(depositAmount) <= 0) {
+      showToast("Enter a valid amount", "error");
+      return;
+    }
+    if (walletMode === "circle" && !circleWallet) {
+      showToast("No Circle Wallet found — create one on the Circle Wallet tab first", "error");
+      return;
+    }
+    // Deposit pulls from this wallet's own on-chain USDC balance on
+    // depositChain — a different number from the Gateway unified balance
+    // shown above. Catching a shortfall here avoids a confusing Circle API
+    // error for what's really just "this wallet has no USDC on this chain
+    // yet" (fix: fund it from a faucet first, then deposit).
+    if (walletBalanceOnDepositChain !== null && Number(depositAmount) > walletBalanceOnDepositChain) {
+      showToast(`Your wallet only has ${walletBalanceOnDepositChain.toFixed(2)} USDC on ${depositChain} — fund it (e.g. from a testnet faucet) before depositing more than that.`, "error");
+      return;
+    }
+    // Circle Developer-Controlled Wallets need the chain's own native gas
+    // token to execute ANY transaction (approve, deposit, ...) unless gas
+    // sponsorship is separately configured — it isn't here. Arc is the one
+    // chain this never bites on, because Arc's native gas token IS USDC
+    // (the same balance just checked above). Elsewhere, a wallet with zero
+    // native balance doesn't get a clean error back from Circle — the
+    // transaction just sits unmined until it eventually times out. Checking
+    // this upfront turns that silent hang into an immediate, clear message.
+    if (walletMode === "circle" && depositChain !== "Arc Testnet") {
+      try {
+        const gasClient = createPublicClient({ chain: CHAIN_OBJECT[depositChain], transport: http() });
+        const walletAddr = getWalletIdForChain(circleWallet, CIRCLE_CHAIN_FOR[depositChain]) ? circleWallet!.address : null;
+        const nativeBalance = walletAddr ? await gasClient.getBalance({ address: walletAddr as `0x${string}` }) : 0n;
+        if (nativeBalance === 0n) {
+          showToast(`Your Circle Wallet has no native gas token on ${depositChain} (e.g. Sepolia ETH) — it needs a small amount to execute the deposit transaction. Get some from a testnet faucet first, then try again.`, "error");
+          return;
+        }
+      } catch {
+        /* if the gas check itself fails, don't block the deposit on it — just proceed and let the real attempt surface whatever actually goes wrong */
+      }
+    }
+    setDepositing(true);
+    try {
+      const usdcAddress = CHAIN_USDC[depositChain];
+      const amountUnits = parseUnits(depositAmount, 6);
+
+      if (walletMode === "circle") {
+        const walletId = getWalletIdForChain(circleWallet, CIRCLE_CHAIN_FOR[depositChain]);
+        if (!walletId) {
+          showToast(`Your Circle Wallet doesn't have a ${depositChain} address yet`, "error");
+          setDepositing(false);
+          return;
+        }
+        await circleContractCallAndWait({
+          walletId, contractAddress: usdcAddress,
+          abiFunctionSignature: "approve(address,uint256)",
+          abiParameters: [GATEWAY_WALLET_ADDRESS, amountUnits.toString()],
+        });
+        await circleContractCallAndWait({
+          walletId, contractAddress: GATEWAY_WALLET_ADDRESS,
+          abiFunctionSignature: "deposit(address,uint256)",
+          abiParameters: [usdcAddress, amountUnits.toString()],
+        });
+      } else {
+        const chainObj = CHAIN_OBJECT[depositChain];
+        try {
+          await provider.request({ method: "wallet_switchEthereumChain", params: [{ chainId: CHAIN_ID_HEX[depositChain] }] });
+        } catch {
+          showToast(`Please switch your wallet to ${depositChain} and try again`, "error");
+          setDepositing(false);
+          return;
+        }
+        const walletClient = createWalletClient({ chain: chainObj, transport: custom(provider) });
+        const publicClient = createPublicClient({ chain: chainObj, transport: http() });
+
+        const approveHash = await walletClient.writeContract({
+          address: usdcAddress, abi: erc20Abi, functionName: "approve",
+          args: [GATEWAY_WALLET_ADDRESS, amountUnits], account: address as `0x${string}`,
+        });
+        await waitForSuccess(publicClient, approveHash);
+
+        const depositHash = await walletClient.writeContract({
+          address: GATEWAY_WALLET_ADDRESS, abi: GATEWAY_WALLET_ABI, functionName: "deposit",
+          args: [usdcAddress, amountUnits], account: address as `0x${string}`,
+        });
+        await waitForSuccess(publicClient, depositHash);
+      }
+
+      showToast("Deposited — waiting for Gateway to process it...", "success");
+      setDepositAmount("");
+      pollForBalanceIncrease(total ?? 0);
+    } catch (err) {
+      showToast(err instanceof Error ? err.message : "Deposit failed", "error");
+    } finally {
+      setDepositing(false);
+    }
+  }
+
+  // Instant transfer: burn on transferSource, mint on transferDest. Requires
+  // an existing deposited balance on the source chain (from the Deposit flow
+  // above) — this does not deposit anything itself.
+  async function doTransfer() {
+    if (walletMode === "circle" && !circleWallet) {
+      showToast("No Circle Wallet found — create one on the Circle Wallet tab first", "error");
+      return;
+    }
+    // Gateway's unified balance is a display sum, not a single pooled
+    // account — a burn can only draw from what was actually deposited on
+    // that specific source chain (Circle's own API rejects it otherwise,
+    // with a raw message that doesn't explain why). Checking this before
+    // signing turns a confusing after-the-fact API error into a clear
+    // upfront one. The fee (same ~1%, floor 0.01 USDC as the actual burn
+    // intent below) has to be included here too — Circle needs
+    // amount + fee available, not just amount, and a request for exactly
+    // your full available balance would otherwise pass this check and
+    // still get rejected by Gateway.
+    const requestedAmount = Number(transferAmount);
+    const availableOnSource = byChain[transferSource] ?? 0;
+    const estimatedFee = Math.max(requestedAmount * 0.01, 0.01);
+    if (!isNaN(requestedAmount) && requestedAmount + estimatedFee > availableOnSource) {
+      showToast(`Only ${availableOnSource.toFixed(2)} USDC is actually available to spend from ${transferSource} (deposited there, minus anything still tied up in a pending transfer), and Gateway's own fee (~${estimatedFee.toFixed(2)} USDC) comes out of that too — try a slightly smaller amount.`, "error");
+      return;
+    }
+    setTransferring(true);
+    setTransferStatus("Signing burn intent...");
+    try {
+      const sourceUsdc = CHAIN_USDC[transferSource];
+      const destUsdc = CHAIN_USDC[transferDest];
+      const transferAddress = walletMode === "circle" ? (circleWallet!.address as `0x${string}`) : (address as `0x${string}`);
+      const recipient = (transferRecipient.trim() || transferAddress) as `0x${string}`;
+      const amountUnits = parseUnits(transferAmount, 6);
+
+      // Reads (block height, withdrawalDelay) don't need a signer — plain
+      // public RPC works the same regardless of wallet mode.
+      const sourcePublicClient = createPublicClient({ chain: CHAIN_OBJECT[transferSource], transport: http() });
+      const currentBlock = await sourcePublicClient.getBlockNumber();
+      const withdrawalDelay = await sourcePublicClient.readContract({
+        address: GATEWAY_WALLET_ADDRESS, abi: GATEWAY_WALLET_READ_ABI, functionName: "withdrawalDelay",
+      });
+
+      const { domain, types, primaryType, message } = buildBurnIntentTypedData({
+        sourceDomain: GATEWAY_DOMAINS[transferSource],
+        destinationDomain: GATEWAY_DOMAINS[transferDest],
+        sourceTokenAddress: sourceUsdc,
+        destinationTokenAddress: destUsdc,
+        depositorAddress: transferAddress,
+        recipientAddress: recipient,
+        amountUnits,
+        maxBlockHeight: currentBlock + withdrawalDelay + 1000n, // must clear the wallet's own withdrawalDelay, plus a safety margin
+        maxFeeUnits: amountUnits / 100n > 10000n ? amountUnits / 100n : 10000n, // ~1%, floor 0.01 USDC
+      });
+
+      let signature: `0x${string}`;
+      if (walletMode === "circle") {
+        const walletId = getWalletIdForChain(circleWallet, CIRCLE_CHAIN_FOR[transferSource]);
+        if (!walletId) throw new Error(`Your Circle Wallet doesn't have a ${transferSource} address yet`);
+        signature = await signTypedDataWithCircleWallet(walletId, toCircleTypedDataJSON({ domain, types, primaryType, message }));
+      } else {
+        await provider.request({ method: "wallet_switchEthereumChain", params: [{ chainId: CHAIN_ID_HEX[transferSource] }] });
+        const walletClient = createWalletClient({ chain: CHAIN_OBJECT[transferSource], transport: custom(provider) });
+        signature = await walletClient.signTypedData({ account: transferAddress, domain, types, primaryType, message });
+      }
+
+      showToast("Signed — requesting attestation from Gateway...", "success");
+      setTransferStatus("Requesting attestation from Gateway...");
+      const { attestation, signature: attestationSignature } = await requestTransferAttestation(message, signature);
+
+      if (walletMode === "circle") {
+        setTransferStatus("Minting on destination chain...");
+        const destWalletId = getWalletIdForChain(circleWallet, CIRCLE_CHAIN_FOR[transferDest]);
+        if (!destWalletId) throw new Error(`Your Circle Wallet doesn't have a ${transferDest} address yet`);
+        const previousDestBalance = byChain[transferDest] ?? 0;
+        // Submit and move on — Circle's own transaction-status tracking can
+        // lag behind the real on-chain result, but Gateway's balance ledger
+        // updates as soon as the mint is actually mined. Watching the balance
+        // directly is the accurate signal here, not Circle's "COMPLETE" state.
+        //
+        // This call is wrapped separately from the signing/attestation steps
+        // above: by this point, Gateway has already attested the burn is
+        // valid — a failure here is a DIFFERENT kind of problem (most likely
+        // the destination Circle Wallet has no native gas token on
+        // {transferDest} to execute the mint transaction with), not a sign
+        // that the transfer itself was invalid. Saying "failed" the same way
+        // as an earlier-stage rejection would be misleading.
+        try {
+          await circleContractCall({
+            walletId: destWalletId, contractAddress: GATEWAY_MINTER_ADDRESS,
+            abiFunctionSignature: "gatewayMint(bytes,bytes)",
+            abiParameters: [attestation, attestationSignature],
+          });
+        } catch (mintErr: unknown) {
+          const mintMsg = (mintErr as { message?: string })?.message ?? "unknown reason";
+          throw new Error(`Gateway approved the transfer (attestation received) — the mint on ${transferDest} didn't go through (${mintMsg}). This is most likely the destination Circle Wallet needing a small amount of native gas token on ${transferDest}. Your funds aren't lost; check back or retry once that's funded.`, { cause: mintErr });
+        }
+        setTransferAmount("");
+        setShowTransferConfirm(false);
+        setTransferring(false);
+        setTransferStatus("");
+        pollForChainBalanceIncrease(transferDest, previousDestBalance);
+        return;
+      } else {
+        await provider.request({ method: "wallet_switchEthereumChain", params: [{ chainId: CHAIN_ID_HEX[transferDest] }] });
+        const destWalletClient = createWalletClient({ chain: CHAIN_OBJECT[transferDest], transport: custom(provider) });
+        const destPublicClient = createPublicClient({ chain: CHAIN_OBJECT[transferDest], transport: http() });
+        const previousDestBalance = byChain[transferDest] ?? 0;
+        const mintHash = await destWalletClient.writeContract({
+          address: GATEWAY_MINTER_ADDRESS, abi: GATEWAY_MINTER_ABI, functionName: "gatewayMint",
+          args: [attestation, attestationSignature], account: transferAddress,
+        });
+        await waitForSuccess(destPublicClient, mintHash);
+
+        // The on-chain mint is confirmed here, but Gateway's own balance
+        // ledger can take longer to catch up (same lag we saw on deposits) —
+        // so watch the balance directly rather than trusting a short delay.
+        setTransferAmount("");
+        setShowTransferConfirm(false);
+        setTransferring(false);
+        setTransferStatus("");
+        pollForChainBalanceIncrease(transferDest, previousDestBalance);
+        return;
+      }
+    } catch (err) {
+      const message = err instanceof Error ? err.message : "Transfer failed";
+      if (message.toLowerCase().includes("timed out")) {
+        // The frontend gave up watching, but Circle's backend may still complete
+        // the transaction — don't tell the user it failed when funds may have
+        // actually moved. Keep checking the balance in the background.
+        showToast("Still processing on Circle's side — we stopped watching, but it may still complete. Checking your balance...", "error");
+        setShowTransferConfirm(false);
+        setTimeout(refresh, 15000);
+      } else {
+        showToast(message, "error");
+      }
+    } finally {
+      setTransferring(false);
+      setTransferStatus("");
+    }
+  }
+
+  return (
+    <div style={{ maxWidth: isMobile ? 480 : 1150, margin: "0 auto", padding: isMobile ? "1.5rem" : "2rem" }}>
+      <div style={{ display: "flex", alignItems: "center", gap: 8, marginBottom: 4 }}>
+        <Zap size={20} color="#E2E0C8" />
+        <h2 style={{ fontSize: 18, fontWeight: 800, margin: 0, color: "#E2E0C8" }}>Unified Balance</h2>
+      </div>
+      <p style={{ fontSize: 13, color: "#A6B49E", marginBottom: 24 }}>
+        Powered by Circle Gateway — deposit once, access instantly across every supported chain.
+      </p>
+
+      {/* Row 1: Balance overview (left) + Instant transfer (right), top-aligned */}
+      <div style={{ display: "grid", gridTemplateColumns: isMobile ? "1fr" : "1fr 1fr", gap: 20, marginBottom: 40, alignItems: "start" }}>
+        <div>
+          <div style={{ display: "flex", gap: 6, marginBottom: 16, background: "rgba(16, 23, 20, 0.6)", border: "1px solid rgba(226, 224, 200, 0.1)", borderRadius: 10, padding: 4 }}>
+            <button onClick={() => setWalletMode("browser")}
+              style={{ flex: 1, display: "flex", alignItems: "center", justifyContent: "center", gap: 6, padding: "0.5rem", borderRadius: 8, border: "none", background: walletMode === "browser" ? "rgba(166, 180, 158, 0.15)" : "transparent", boxShadow: walletMode === "browser" ? "0 2px 8px rgba(0,0,0,0.3)" : "none", fontSize: 12.5, fontWeight: 700, color: walletMode === "browser" ? "#E2E0C8" : "#818C78", cursor: "pointer" }}>
+              <Wallet size={13} /> Browser Wallet
+            </button>
+            <button onClick={() => setWalletMode("circle")}
+              style={{ flex: 1, display: "flex", alignItems: "center", justifyContent: "center", gap: 6, padding: "0.5rem", borderRadius: 8, border: "none", background: walletMode === "circle" ? "rgba(166, 180, 158, 0.15)" : "transparent", boxShadow: walletMode === "circle" ? "0 2px 8px rgba(0,0,0,0.3)" : "none", fontSize: 12.5, fontWeight: 700, color: walletMode === "circle" ? "#E2E0C8" : "#818C78", cursor: "pointer" }}>
+              <CircleDollarSign size={13} /> Circle Wallet
+            </button>
+          </div>
+
+          {walletMode === "circle" && !circleWallet && (
+            <div style={{ background: "rgba(129, 140, 120, 0.15)", border: "1px solid rgba(226, 224, 200, 0.2)", borderRadius: 10, padding: "0.75rem 1rem", fontSize: 12.5, color: "#E2E0C8", marginBottom: 16 }}>
+              No Circle Wallet found. Create one on the Circle Wallet tab first.
+            </div>
+          )}
+          {walletMode === "circle" && circleWallet && (
+            <div style={{ fontSize: 11, color: "#818C78", marginBottom: 16, fontFamily: "ui-monospace, monospace" }}>
+              {circleWallet.address.slice(0, 8)}...{circleWallet.address.slice(-6)}
+            </div>
+          )}
+
+          <div style={{ background: "linear-gradient(135deg, rgba(78, 99, 94, 0.85) 0%, rgba(129, 140, 120, 0.85) 100%)", border: "1px solid rgba(226, 224, 200, 0.2)", borderRadius: 16, padding: "1.5rem", marginBottom: 20, color: "#E2E0C8", boxShadow: "0 18px 40px rgba(0, 0, 0, 0.4)" }}>
+            <div style={{ fontSize: 12, opacity: 0.85, marginBottom: 4 }}>Total unified balance</div>
+            <div style={{ fontSize: 32, fontWeight: 800, fontFamily: "ui-monospace, monospace", color: "#E2E0C8" }}>
+              {loading ? "..." : `${total?.toFixed(2) ?? "0.00"} USDC`}
+            </div>
+            {waitingForBalance && (
+              <div style={{ display: "flex", alignItems: "center", gap: 6, marginTop: 8, fontSize: 11.5, opacity: 0.9 }}>
+                <RefreshCw size={11} className="spin" />
+                Processing — Gateway is confirming it...
+              </div>
+            )}
+            <button onClick={refresh} disabled={loading}
+              style={{ marginTop: 10, background: "rgba(226, 224, 200, 0.15)", border: "1px solid rgba(226, 224, 200, 0.2)", borderRadius: 8, padding: "0.4rem 0.8rem", color: "#E2E0C8", fontSize: 11, fontWeight: 700, cursor: "pointer", display: "flex", alignItems: "center", gap: 4 }}>
+              <RefreshCw size={12} className={loading ? "spin" : ""} /> Refresh
+            </button>
+          </div>
+
+          <div style={{ background: "rgba(20, 28, 25, 0.72)", border: "1px solid rgba(226, 224, 200, 0.12)", borderRadius: 16, padding: "1.25rem" }}>
+            <div style={{ fontSize: 11, fontWeight: 700, color: "#818C78", marginBottom: 8, textTransform: "uppercase" }}>By chain</div>
+            {(Object.keys(GATEWAY_DOMAINS) as GatewayChainKey[]).map((chain) => (
+              <div key={chain} style={{ display: "flex", alignItems: "center", justifyContent: "space-between", padding: "0.6rem 0", borderBottom: "1px solid rgba(226, 224, 200, 0.08)", fontSize: 13 }}>
+                <span style={{ display: "flex", alignItems: "center", gap: 8, color: "#E2E0C8" }}>
+                  <ChainIcon name={chain} size={20} />
+                  {chain}
+                </span>
+                <span style={{ fontFamily: "ui-monospace, monospace", fontWeight: 600, color: "#A6B49E" }}>{(byChain[chain] ?? 0).toFixed(2)} USDC</span>
+              </div>
+            ))}
+          </div>
+        </div>
+
+        {/* Instant transfer */}
+        <div style={{ background: "rgba(20, 28, 25, 0.72)", border: "1px solid rgba(226, 224, 200, 0.12)", borderRadius: 16, padding: isMobile ? "1.25rem" : "1.5rem", boxShadow: "0 18px 40px rgba(0,0,0,0.35)", backdropFilter: "blur(20px)" }}>
+          <div style={{ display: "flex", alignItems: "center", gap: 8, marginBottom: 6 }}>
+            <div style={{ width: 32, height: 32, borderRadius: 10, background: "rgba(166, 180, 158, 0.15)", border: "1px solid rgba(166, 180, 158, 0.25)", display: "flex", alignItems: "center", justifyContent: "center" }}>
+              <Zap size={16} color="#E2E0C8" />
+            </div>
+            <div style={{ fontSize: 16, fontWeight: 800, color: "#E2E0C8" }}>Instant transfer <span style={{ color: "#A6B49E" }}>&lt;500ms</span></div>
+          </div>
+          <p style={{ fontSize: 12.5, color: "#A6B49E", marginTop: 0, marginBottom: 14 }}>
+            Move part of your deposited balance to another chain instantly, without a new deposit.
+          </p>
+          <div style={{ display: "flex", flexDirection: "column", gap: 10 }}>
+            <GatewayChainSelect value={transferSource} onChange={setTransferSource} open={transferSourceOpen} setOpen={setTransferSourceOpen} label="FROM" disabled={transferring} />
+            <p style={{ fontSize: 11, color: "#818C78", margin: "-4px 0 0 2px" }}>
+              {(byChain[transferSource] ?? 0).toFixed(2)} USDC available to spend from {transferSource} — a transfer can only draw from this, not your full unified total.
+            </p>
+            {(pendingByChain[transferSource] ?? 0) > 0 && (
+              <p style={{ fontSize: 11, color: "#E2E0C8", margin: "-6px 0 0 2px" }}>
+                {(pendingByChain[transferSource] ?? 0).toFixed(2)} USDC on {transferSource} is currently locked in an unresolved transfer (likely from an earlier failed attempt) — it should clear on its own; try again in a bit if a transfer keeps failing here.
+              </p>
+            )}
+            <div style={{ display: "flex", justifyContent: "center", marginTop: -4, marginBottom: -4 }}>
+              <button onClick={() => { const s = transferSource; setTransferSource(transferDest); setTransferDest(s); }} disabled={transferring}
+                style={{ width: 28, height: 28, borderRadius: 8, background: "rgba(166, 180, 158, 0.12)", border: "1px solid rgba(226, 224, 200, 0.15)", color: "#E2E0C8", cursor: transferring ? "not-allowed" : "pointer", display: "flex", alignItems: "center", justifyContent: "center" }}>
+                <RefreshCw size={12} style={{ transform: "rotate(90deg)" }} />
+              </button>
+            </div>
+            <GatewayChainSelect value={transferDest} onChange={setTransferDest} open={transferDestOpen} setOpen={setTransferDestOpen} label="TO" disabled={transferring} />
+            <input type="number" placeholder="Amount (USDC)" value={transferAmount} onChange={(e) => setTransferAmount(e.target.value)}
+              style={{ width: "100%", padding: "0.65rem", borderRadius: 10, border: "1px solid rgba(226, 224, 200, 0.12)", background: "rgba(16, 23, 20, 0.6)", color: "#E2E0C8", fontSize: 13, boxSizing: "border-box", outline: "none" }} />
+            <input type="text" placeholder="Recipient address (optional — defaults to you)" value={transferRecipient} onChange={(e) => setTransferRecipient(e.target.value)}
+              style={{ width: "100%", padding: "0.65rem", borderRadius: 10, border: "1px solid rgba(226, 224, 200, 0.12)", background: "rgba(16, 23, 20, 0.6)", color: "#E2E0C8", fontSize: 13, boxSizing: "border-box", outline: "none" }} />
+            <button
+              onClick={() => {
+                if (!transferAmount || Number(transferAmount) <= 0) { showToast("Enter a valid amount", "error"); return; }
+                if (transferSource === transferDest) { showToast("Source and destination must be different", "error"); return; }
+                setShowTransferConfirm(true);
+              }}
+              disabled={transferring}
+              style={{ width: "100%", padding: "0.75rem", borderRadius: 12, border: "none", background: "linear-gradient(135deg, #4E635E 0%, #818C78 50%, #A6B49E 100%)", color: "#E2E0C8", fontSize: 13, fontWeight: 700, cursor: transferring ? "not-allowed" : "pointer", opacity: transferring ? 0.6 : 1, boxShadow: "0 10px 25px rgba(0, 0, 0, 0.35)" }}>
+              Review Transfer
+            </button>
+          </div>
+        </div>
+      </div>
+
+      {/* Row 2: Deposit (left) + Gateway status (right) */}
+      <div style={{ display: "grid", gridTemplateColumns: isMobile ? "1fr" : "1fr 1fr", gap: 20, alignItems: "start" }}>
+        <div style={{ background: "rgba(20, 28, 25, 0.72)", border: "1px solid rgba(226, 224, 200, 0.12)", borderRadius: 16, padding: isMobile ? "1rem" : "1.5rem", backdropFilter: "blur(20px)" }}>
+          <div style={{ fontSize: 14, fontWeight: 700, marginBottom: 12, color: "#E2E0C8" }}>Deposit into unified balance</div>
+          <p style={{ fontSize: 11.5, color: "#818C78", margin: "-6px 0 10px 0" }}>
+            {walletBalanceOnDepositChain === null
+              ? "Checking your wallet's USDC balance on this chain..."
+              : `${walletBalanceOnDepositChain.toFixed(2)} USDC in your wallet on ${depositChain}, available to deposit. This is separate from the unified balance above — deposit pulls from this wallet's own on-chain USDC, not from any balance already in Gateway.`}
+          </p>
+          <div style={{ display: "flex", flexDirection: isMobile ? "column" : "row", gap: 10, alignItems: isMobile ? "stretch" : "flex-start" }}>
+            <div style={{ flex: 1 }}>
+              <GatewayChainSelect value={depositChain} onChange={setDepositChain} open={depositChainOpen} setOpen={setDepositChainOpen} label="CHAIN" disabled={depositing} />
+            </div>
+            <input type="number" placeholder="Amount (USDC)" value={depositAmount} onChange={(e) => setDepositAmount(e.target.value)}
+              style={{ flex: 1, padding: "0.6rem", borderRadius: 10, border: "1px solid rgba(226, 224, 200, 0.12)", background: "rgba(16, 23, 20, 0.6)", color: "#E2E0C8", fontSize: 13, boxSizing: "border-box", height: isMobile ? undefined : 46, alignSelf: isMobile ? undefined : "center", outline: "none" }} />
+            <button onClick={doDeposit} disabled={depositing || (walletMode === "circle" && !circleWallet)}
+              style={{ flex: isMobile ? undefined : "0 0 140px", padding: "0.6rem", borderRadius: 10, border: "none", background: "linear-gradient(135deg, #4E635E 0%, #818C78 100%)", color: "#E2E0C8", fontSize: 13, fontWeight: 700, cursor: depositing || (walletMode === "circle" && !circleWallet) ? "not-allowed" : "pointer", opacity: depositing || (walletMode === "circle" && !circleWallet) ? 0.6 : 1, height: isMobile ? undefined : 46, alignSelf: isMobile ? undefined : "center" }}>
+              {depositing ? "Depositing..." : "Deposit"}
+            </button>
+          </div>
+          <p style={{ fontSize: 11, color: "#818C78", marginTop: 10, marginBottom: 0 }}>
+            Requires two confirmations: approve, then deposit. Balance updates after the source chain finalizes.
+          </p>
+        </div>
+
+        {/* Gateway status / supported chains */}
+        <div style={{ background: "rgba(20, 28, 25, 0.72)", border: "1px solid rgba(226, 224, 200, 0.12)", borderRadius: 16, padding: "1.25rem", backdropFilter: "blur(20px)" }}>
+          <div style={{ fontSize: 11, fontWeight: 700, color: "#818C78", textTransform: "uppercase", marginBottom: 12 }}>Gateway status</div>
+          <div style={{ display: "flex", alignItems: "center", gap: 6, marginBottom: 16 }}>
+            <div style={{ width: 8, height: 8, borderRadius: "50%", background: "#A6B49E" }} />
+            <span style={{ fontSize: 12.5, fontWeight: 600, color: "#E2E0C8" }}>Live on testnet</span>
+          </div>
+          <div style={{ fontSize: 11, fontWeight: 700, color: "#818C78", textTransform: "uppercase", marginBottom: 8 }}>Supported chains</div>
+          <div style={{ display: "flex", flexDirection: "column", gap: 8 }}>
+            {(Object.keys(GATEWAY_DOMAINS) as GatewayChainKey[]).map((c) => (
+              <div key={c} style={{ fontSize: 12.5, color: "#A6B49E", display: "flex", alignItems: "center", gap: 8 }}>
+                <ChainIcon name={c} size={18} />
+                {c}
+              </div>
+            ))}
+          </div>
+        </div>
+      </div>
+
+      {showTransferConfirm && (
+        <div style={{ position: "fixed", inset: 0, background: "rgba(0,0,0,0.75)", backdropFilter: "blur(8px)", display: "flex", alignItems: "center", justifyContent: "center", zIndex: 1000, padding: "1rem" }}>
+          <div style={{ background: "rgba(20, 28, 25, 0.95)", border: "1px solid rgba(226, 224, 200, 0.18)", borderRadius: 18, padding: "1.5rem", maxWidth: 380, width: "100%", boxShadow: "0 24px 60px rgba(0,0,0,0.6)" }}>
+            <h3 style={{ fontSize: 16, fontWeight: 800, marginTop: 0, marginBottom: 12, color: "#E2E0C8" }}>Confirm transfer</h3>
+            <div style={{ fontSize: 13, color: "#A6B49E", display: "flex", flexDirection: "column", gap: 8, marginBottom: 16 }}>
+              <div style={{ display: "flex", justifyContent: "space-between" }}><span>Amount</span><b style={{ color: "#E2E0C8" }}>{transferAmount} USDC</b></div>
+              <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center" }}>
+                <span>Route</span>
+                <b style={{ display: "flex", alignItems: "center", gap: 5, color: "#E2E0C8" }}>
+                  <ChainIcon name={transferSource} size={16} /> {transferSource}
+                  <ArrowRight size={12} />
+                  <ChainIcon name={transferDest} size={16} /> {transferDest}
+                </b>
+              </div>
+              <div style={{ display: "flex", justifyContent: "space-between" }}><span>Recipient</span><b style={{ fontFamily: "ui-monospace, monospace", fontSize: 11, color: "#E2E0C8" }}>{(transferRecipient.trim() || (walletMode === "circle" ? circleWallet?.address : address) || "").slice(0, 10)}...</b></div>
+            </div>
+            <div style={{ display: "flex", gap: 8 }}>
+              <button onClick={() => setShowTransferConfirm(false)} disabled={transferring}
+                style={{ flex: 1, padding: "0.7rem", borderRadius: 10, border: "1px solid rgba(226, 224, 200, 0.15)", background: "rgba(166, 180, 158, 0.08)", color: "#E2E0C8", fontSize: 13, fontWeight: 700, cursor: "pointer" }}>
+                Cancel
+              </button>
+              <button onClick={doTransfer} disabled={transferring}
+                style={{ flex: 1, padding: "0.7rem", borderRadius: 10, border: "none", background: "linear-gradient(135deg, #4E635E 0%, #818C78 100%)", color: "#E2E0C8", fontSize: 13, fontWeight: 700, cursor: transferring ? "not-allowed" : "pointer", opacity: transferring ? 0.6 : 1 }}>
+                {transferring ? (transferStatus || "Signing...") : "Confirm & Sign"}
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
+    </div>
+  );
+}
