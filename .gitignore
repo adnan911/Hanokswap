@@ -10,7 +10,7 @@ temp_swap.txt
 
 # Foundry — build artifacts and dependencies, both reproducible via
 # `forge build` / `forge install foundry-rs/forge-std --no-git --no-commit`
-out/
-cache/
-broadcast/
-lib/
+/out/
+/cache/
+/broadcast/
+/lib/
