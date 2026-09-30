@@ -1,11 +1,11 @@
 // SPDX-License-Identifier: MIT
 pragma solidity ^0.8.24;
 
-import "../core/GiwaPoolFactory.sol";
-import "../core/GiwaCLDeployer.sol";
-import "../core/GiwaStableDeployer.sol";
-import "../periphery/GiwaUniversalRouter.sol";
-import "../governance/ProtocolFeeVault.sol";
+import "../contracts/core/GiwaPoolFactory.sol";
+import "../contracts/core/GiwaCLDeployer.sol";
+import "../contracts/core/GiwaStableDeployer.sol";
+import "../contracts/periphery/GiwaUniversalRouter.sol";
+import "../contracts/governance/ProtocolFeeVault.sol";
 
 interface ScriptBase {
     // Standard Foundry script interface placeholder
