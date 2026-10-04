@@ -242,14 +242,14 @@ deployToken();`;
           </span>
         </div>
 
-        <h1 style={{ fontSize: isMobile ? 24 : 32, fontWeight: 800, color: 'var(--foreground)', margin: '0 0 10px 0', letterSpacing: '-0.02em' }}>
-          {language === 'ko' ? 'GIWA 개발자 문서 & 토큰 생성 가이드' : 'GIWA Developer Documentation & Token Guide'}
-        </h1>
+        <div style={{ fontSize: 18, fontWeight: 800, color: 'var(--foreground)', margin: '0 0 6px 0' }}>
+          {language === 'ko' ? 'GIWA 개발자 문서 & 연동 가이드' : 'GIWA Developer Documentation'}
+        </div>
 
-        <p style={{ fontSize: 14, color: 'var(--muted-foreground)', maxWidth: 680, lineHeight: 1.6, margin: '0 0 20px 0' }}>
+        <p style={{ fontSize: 13, color: 'var(--muted-foreground)', maxWidth: 680, lineHeight: 1.5, margin: '0 0 16px 0' }}>
           {language === 'ko'
-            ? 'Giwa Sepolia 테스트넷에서 토큰을 발행하고, DEX 풀을 개설하며, 스마트 컨트랙트를 연동하는 공식 종합 가이드입니다.'
-            : 'Complete guide for deploying ERC-20 tokens, creating DEX liquidity pools, and integrating smart contracts on GIWA Sepolia Testnet.'}
+            ? '스마트 컨트랙트 배포, DEX 풀 연동 및 SDK 가이드를 확인하세요.'
+            : 'Deploy ERC-20 tokens, integrate DEX liquidity pools, and interact with GIWA L2 smart contracts.'}
         </p>
 
         <div style={{ display: 'flex', flexWrap: 'wrap', gap: 10 }}>

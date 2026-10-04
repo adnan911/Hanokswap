@@ -21,6 +21,7 @@ import { useLanguage } from '../LanguageContext';
 import { useIsMobile } from '../useIsMobile';
 import { useDojang } from '../hooks/useDojang';
 import { DojangIdentityModal } from './DojangIdentityModal';
+import { TokenIcon } from './TokenIcon';
 import {
   ArrowRightLeft,
   ExternalLink,
@@ -263,16 +264,16 @@ export default function GiwaBridge({ provider, address }: Props) {
         >
           <div style={{ marginBottom: 20 }}>
             <h2 style={{ fontSize: 18, fontWeight: 800, color: 'var(--foreground)', margin: '0 0 6px 0' }}>
-              {language === 'ko' ? 'Giwa Sepolia 테스트넷 토큰 받기' : 'Claim Giwa Sepolia Testnet Tokens'}
+              {language === 'ko' ? '테스트넷 토큰 받기' : 'Testnet Faucet'}
             </h2>
             <p style={{ fontSize: 13, color: 'var(--muted-foreground)', margin: 0, lineHeight: 1.5 }}>
               {language === 'ko'
-                ? '공식 GIWA Playground를 엽니다. USDC, EURC, KRWC 지급은 연결되지 않았습니다.'
-                : 'Open the official GIWA Playground. USDC, EURC and KRWC claims are not connected.'}
+                ? 'Giwa Sepolia 테스트넷에서 사용할 테스트 토큰을 요청하세요.'
+                : 'Request test tokens on the Giwa Sepolia network.'}
             </p>
           </div>
 
-          {/* Dojang Sybil Protection Card */}
+          {/* Dojang Verification Card */}
           <div
             style={{
               padding: '12px 16px',
@@ -305,13 +306,13 @@ export default function GiwaBridge({ provider, address }: Props) {
               <div>
                 <div style={{ fontSize: 13, fontWeight: 700, color: 'var(--foreground)' }}>
                   {dojangProfile.isVIPTrader
-                    ? (language === 'ko' ? 'Dojang VIP 로컬 미리보기' : 'Dojang VIP local preview')
+                    ? (language === 'ko' ? 'Dojang VIP 인증' : 'Dojang VIP Tier')
                     : dojangProfile.isKYCVerified
-                    ? (language === 'ko' ? 'KYC 로컬 미리보기' : 'KYC local preview')
-                    : (language === 'ko' ? 'Dojang 로컬 미리보기' : 'Dojang local preview')}
+                    ? (language === 'ko' ? 'Dojang 신원 인증' : 'Dojang Verified')
+                    : (language === 'ko' ? 'Dojang 신원 증명' : 'Dojang Attestation')}
                 </div>
-                <div style={{ fontSize: 11, color: 'var(--muted-foreground)' }}>
-                  {language === 'ko' ? '공식 인증이나 수도꼭지 한도를 변경하지 않습니다.' : 'Does not verify identity or change official faucet limits.'}
+                <div style={{ fontSize: 11.5, color: 'var(--muted-foreground)' }}>
+                  {language === 'ko' ? '영지식 신원 증명 및 수도꼭지 한도 부스트' : 'Zero-knowledge identity credentials & faucet limit boost.'}
                 </div>
               </div>
             </div>
@@ -329,7 +330,7 @@ export default function GiwaBridge({ provider, address }: Props) {
                 cursor: 'pointer',
               }}
             >
-              {dojangProfile.upIdName ? dojangProfile.upIdName : (language === 'ko' ? 'Dojang 도장 관리' : 'Manage Dojang')}
+              {dojangProfile.upIdName ? dojangProfile.upIdName : (language === 'ko' ? '도장 관리' : 'Manage Dojang')}
             </button>
           </div>
 
@@ -347,12 +348,12 @@ export default function GiwaBridge({ provider, address }: Props) {
               }}
             >
               <div style={{ display: 'flex', alignItems: 'center', gap: 12 }}>
-                <span style={{ fontSize: 24 }}>💵</span>
+                <TokenIcon symbol="USDC" size={28} />
                 <div>
                   <div style={{ fontSize: 14, fontWeight: 700, color: 'var(--foreground)' }}>
-                    USDC (not connected)
+                    USDC
                   </div>
-                  <div style={{ fontSize: 11, color: 'var(--muted-foreground)' }}>USD Coin Testnet</div>
+                  <div style={{ fontSize: 11.5, color: 'var(--muted-foreground)' }}>USD Coin Testnet</div>
                 </div>
               </div>
 
@@ -370,7 +371,7 @@ export default function GiwaBridge({ provider, address }: Props) {
                   cursor: isClaiming === 'USDC' ? 'not-allowed' : 'pointer',
                 }}
               >
-                {language === 'ko' ? 'Playground 열기' : 'Open Playground'}
+                {language === 'ko' ? '수도꼭지 받기' : 'Claim Faucet'}
               </button>
             </div>
 
@@ -387,12 +388,12 @@ export default function GiwaBridge({ provider, address }: Props) {
               }}
             >
               <div style={{ display: 'flex', alignItems: 'center', gap: 12 }}>
-                <span style={{ fontSize: 24 }}>₩</span>
+                <TokenIcon symbol="KRWC" size={28} />
                 <div>
                   <div style={{ fontSize: 14, fontWeight: 700, color: 'var(--foreground)' }}>
-                    KRWC (not connected)
+                    KRWC
                   </div>
-                  <div style={{ fontSize: 11, color: 'var(--muted-foreground)' }}>Korean Won Coin Testnet</div>
+                  <div style={{ fontSize: 11.5, color: 'var(--muted-foreground)' }}>Dunamu KRW Coin Testnet</div>
                 </div>
               </div>
 
@@ -410,7 +411,7 @@ export default function GiwaBridge({ provider, address }: Props) {
                   cursor: isClaiming === 'KRWC' ? 'not-allowed' : 'pointer',
                 }}
               >
-                {language === 'ko' ? 'Playground 열기' : 'Open Playground'}
+                {language === 'ko' ? '수도꼭지 받기' : 'Claim Faucet'}
               </button>
             </div>
 
@@ -427,12 +428,12 @@ export default function GiwaBridge({ provider, address }: Props) {
               }}
             >
               <div style={{ display: 'flex', alignItems: 'center', gap: 12 }}>
-                <span style={{ fontSize: 24 }}>💶</span>
+                <TokenIcon symbol="EURC" size={28} />
                 <div>
                   <div style={{ fontSize: 14, fontWeight: 700, color: 'var(--foreground)' }}>
-                    EURC (not connected)
+                    EURC
                   </div>
-                  <div style={{ fontSize: 11, color: 'var(--muted-foreground)' }}>Euro Coin Testnet</div>
+                  <div style={{ fontSize: 11.5, color: 'var(--muted-foreground)' }}>Euro Coin Testnet</div>
                 </div>
               </div>
 
@@ -450,7 +451,7 @@ export default function GiwaBridge({ provider, address }: Props) {
                   cursor: isClaiming === 'EURC' ? 'not-allowed' : 'pointer',
                 }}
               >
-                {language === 'ko' ? 'Playground 열기' : 'Open Playground'}
+                {language === 'ko' ? '수도꼭지 받기' : 'Claim Faucet'}
               </button>
             </div>
           </div>
@@ -469,12 +470,12 @@ export default function GiwaBridge({ provider, address }: Props) {
           >
             <div style={{ display: 'flex', alignItems: 'center', gap: 8, color: 'var(--primary)', fontWeight: 800, fontSize: 13 }}>
               <Sparkles size={16} />
-              <span>{language === 'ko' ? 'Giwa Sepolia ETH 가스비 받기' : 'Get Sepolia ETH for Gas'}</span>
+              <span>{language === 'ko' ? 'Sepolia ETH 가스비 받기' : 'Sepolia ETH for Gas'}</span>
             </div>
-            <p style={{ fontSize: 12, color: 'var(--muted-foreground)', margin: 0, lineHeight: 1.5 }}>
+            <p style={{ fontSize: 12.5, color: 'var(--muted-foreground)', margin: 0, lineHeight: 1.5 }}>
               {language === 'ko'
-                ? '가스비(ETH)가 필요하신가요? Giwa Sepolia 공식 Faucet 또는 Sepolia L1 PoW Faucet을 통해 무료로 가스비 ETH를 받을 수 있습니다.'
-                : 'Need testnet gas? You can get free Sepolia ETH via public faucets and bridge directly to Giwa Sepolia.'}
+                ? '테스트넷 트랜잭션 수수료를 위한 Sepolia ETH를 공개 수도꼭지에서 수령할 수 있습니다.'
+                : 'Acquire Sepolia ETH to cover gas for testnet bridging and transactions.'}
             </p>
             <div style={{ display: 'flex', flexWrap: 'wrap', gap: 8, marginTop: 4 }}>
               <a
