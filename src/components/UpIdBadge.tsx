@@ -12,16 +12,42 @@ export const UpIdBadge: React.FC<UpIdBadgeProps> = ({ profile, onClick, showDisc
   const isVerified = profile.isKYCVerified || profile.isVIPTrader;
   const isVIP = profile.isVIPTrader;
 
+  let bg = "var(--muted)";
+  let border = "1px solid var(--border)";
+  let color = "var(--foreground)";
+  let glow = "none";
+
+  if (isVIP) {
+    bg = "linear-gradient(135deg, rgba(245, 158, 11, 0.15) 0%, rgba(217, 119, 6, 0.25) 100%)";
+    border = "1px solid rgba(245, 158, 11, 0.45)";
+    color = "#fbbf24";
+    glow = "0 2px 10px rgba(245, 158, 11, 0.2)";
+  } else if (isVerified) {
+    bg = "linear-gradient(135deg, rgba(59, 130, 246, 0.15) 0%, rgba(99, 102, 241, 0.25) 100%)";
+    border = "1px solid rgba(59, 130, 246, 0.45)";
+    color = "#60a5fa";
+    glow = "0 2px 10px rgba(59, 130, 246, 0.2)";
+  }
+
   return (
     <button
       onClick={onClick}
-      className={`inline-flex items-center gap-1.5 px-2.5 py-1 rounded-full text-xs font-semibold tracking-wide transition-all border ${
-        isVIP
-          ? "bg-gradient-to-r from-amber-500/20 to-yellow-500/20 border-amber-500/40 text-amber-300 hover:border-amber-400 hover:shadow-amber-500/20 hover:shadow-sm"
-          : isVerified
-          ? "bg-gradient-to-r from-blue-500/20 to-cyan-500/20 border-blue-500/40 text-blue-300 hover:border-blue-400 hover:shadow-blue-500/20 hover:shadow-sm"
-          : "bg-gray-800/80 border-gray-700 text-gray-400 hover:border-gray-500 hover:text-gray-200"
-      }`}
+      style={{
+        display: "inline-flex",
+        alignItems: "center",
+        gap: 6,
+        padding: "5px 10px",
+        borderRadius: 20,
+        background: bg,
+        border: border,
+        color: color,
+        fontSize: 12,
+        fontWeight: 700,
+        cursor: "pointer",
+        transition: "all 0.2s ease",
+        boxShadow: glow,
+        backdropFilter: "blur(6px)",
+      }}
       title={
         isVIP
           ? "Dunamu VIP Institutional Tier (50% Fee Rebate)"
@@ -31,20 +57,28 @@ export const UpIdBadge: React.FC<UpIdBadgeProps> = ({ profile, onClick, showDisc
       }
     >
       {isVIP ? (
-        <Award className="w-3.5 h-3.5 text-amber-400 animate-pulse" />
+        <Award size={14} style={{ color: "#f59e0b" }} />
       ) : isVerified ? (
-        <ShieldCheck className="w-3.5 h-3.5 text-blue-400" />
+        <ShieldCheck size={14} style={{ color: "#3b82f6" }} />
       ) : (
-        <Sparkles className="w-3.5 h-3.5 text-gray-400" />
+        <Sparkles size={14} style={{ color: "var(--muted-foreground)" }} />
       )}
 
-      <span>{profile.upIdName || "Claim up.id"}</span>
+      <span style={{ letterSpacing: "-0.01em" }}>
+        {profile.upIdName ? `${profile.upIdName}.up.id` : "Claim up.id"}
+      </span>
 
       {showDiscount && profile.feeDiscountPercent > 0 && (
         <span
-          className={`ml-0.5 text-[10px] px-1.5 py-0.2 rounded-full font-bold ${
-            isVIP ? "bg-amber-500/30 text-amber-200" : "bg-blue-500/30 text-blue-200"
-          }`}
+          style={{
+            marginLeft: 2,
+            fontSize: 10,
+            padding: "1px 6px",
+            borderRadius: 10,
+            background: isVIP ? "rgba(245, 158, 11, 0.3)" : "rgba(59, 130, 246, 0.3)",
+            color: isVIP ? "#fef3c7" : "#dbeafe",
+            fontWeight: 800,
+          }}
         >
           -{profile.feeDiscountPercent}%
         </span>
