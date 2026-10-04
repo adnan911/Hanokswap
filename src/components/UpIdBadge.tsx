@@ -12,9 +12,9 @@ export const UpIdBadge: React.FC<UpIdBadgeProps> = ({ profile, onClick, showDisc
   const isVerified = profile.isKYCVerified || profile.isVIPTrader;
   const isVIP = profile.isVIPTrader;
 
-  let bg = "var(--muted)";
-  let border = "1px solid var(--border)";
-  let color = "var(--foreground)";
+  let bg = "var(--muted, rgba(255, 255, 255, 0.05))";
+  let border = "1px solid var(--border, rgba(255, 255, 255, 0.12))";
+  let color = "var(--foreground, #ffffff)";
   let glow = "none";
 
   if (isVIP) {
@@ -36,7 +36,7 @@ export const UpIdBadge: React.FC<UpIdBadgeProps> = ({ profile, onClick, showDisc
         display: "inline-flex",
         alignItems: "center",
         gap: 6,
-        padding: "5px 10px",
+        padding: "5px 11px",
         borderRadius: 20,
         background: bg,
         border: border,
@@ -46,7 +46,7 @@ export const UpIdBadge: React.FC<UpIdBadgeProps> = ({ profile, onClick, showDisc
         cursor: "pointer",
         transition: "all 0.2s ease",
         boxShadow: glow,
-        backdropFilter: "blur(6px)",
+        backdropFilter: "blur(8px)",
       }}
       title={
         isVIP
@@ -61,7 +61,7 @@ export const UpIdBadge: React.FC<UpIdBadgeProps> = ({ profile, onClick, showDisc
       ) : isVerified ? (
         <ShieldCheck size={14} style={{ color: "#3b82f6" }} />
       ) : (
-        <Sparkles size={14} style={{ color: "var(--muted-foreground)" }} />
+        <Sparkles size={14} style={{ color: "var(--primary, #fb923c)" }} />
       )}
 
       <span style={{ letterSpacing: "-0.01em" }}>
