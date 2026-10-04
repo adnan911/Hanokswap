@@ -1,5 +1,6 @@
 import { QueryClient, QueryClientProvider } from "@tanstack/react-query";
-import StablecoinAnalytics from "./components/StablecoinAnalytics";
+import PortfolioAnalytics from "./components/PortfolioAnalytics";
+import SecurityGovernancePanel from "./components/SecurityGovernancePanel";
 import CopilotHomeMainnet from "./components/CopilotHomeMainnet";
 import { useState, useEffect, Component, type ReactNode } from "react";
 import type { EIP1193Provider } from "viem";
@@ -20,11 +21,19 @@ import { getNickname, setNickname as saveNickname, clearNickname } from "./gamif
 import { showToast } from "./toast";
 import { ThemeProvider, useTheme } from "./ThemeContext";
 import { LanguageProvider, useLanguage } from "./LanguageContext";
+import { CurrencyProvider } from "./CurrencyContext";
+import { CurrencySelector } from "./components/CurrencySelector";
+import { KoreanTaxModal } from "./components/KoreanTaxModal";
 import LanguageToggle from "./components/LanguageToggle";
 import LiquidityPools from "./components/LiquidityPools";
+import { UpIdBadge } from "./components/UpIdBadge";
+import { DojangIdentityModal } from "./components/DojangIdentityModal";
+import { useDojang } from "./hooks/useDojang";
+import type { Address } from "viem";
 import {
   Home, Repeat, Zap, Droplet, LayoutDashboard, BarChart3, History as HistoryIcon,
-  Power, Check, Sun, Moon, ArrowRight, ArrowDown, AlertTriangle, Sparkles, Coins, BookOpen
+  Power, Check, Sun, Moon, ArrowRight, ArrowDown, AlertTriangle, Sparkles, Coins, BookOpen,
+  FileSpreadsheet, ShieldAlert,
 } from "lucide-react";
 
 interface WalletInfo {
@@ -41,7 +50,7 @@ interface Balances {
   native: string | null;
 }
 
-type Tab = "home" | "swap" | "bridge" | "pools" | "create-token" | "docs" | "dashboard" | "analytics" | "history";
+type Tab = "home" | "swap" | "bridge" | "pools" | "create-token" | "docs" | "dashboard" | "analytics" | "security" | "history";
 
 const queryClient = new QueryClient();
 
@@ -142,11 +151,13 @@ export default function App() {
   return (
     <ThemeProvider>
       <LanguageProvider>
-        <AppErrorBoundary>
-          <QueryClientProvider client={queryClient}>
-            <AppInner />
-          </QueryClientProvider>
-        </AppErrorBoundary>
+        <CurrencyProvider>
+          <AppErrorBoundary>
+            <QueryClientProvider client={queryClient}>
+              <AppInner />
+            </QueryClientProvider>
+          </AppErrorBoundary>
+        </CurrencyProvider>
       </LanguageProvider>
     </ThemeProvider>
   );
@@ -159,9 +170,13 @@ function AppInner() {
   const [wallet, setWallet] = useState<WalletInfo | null>(null);
   const [guestMode, setGuestMode] = useState(false);
   const [showConnectModal, setShowConnectModal] = useState(false);
+  const [showDojangModal, setShowDojangModal] = useState(false);
+  const [showTaxModal, setShowTaxModal] = useState(false);
   const [showOnboarding, setShowOnboarding] = useState(false);
   const [isMobile, setIsMobile] = useState(() => typeof window !== "undefined" && window.innerWidth <= 860);
   const [mobileMenuOpen, setMobileMenuOpen] = useState(false);
+
+  const { profile: dojangProfile } = useDojang(wallet?.address as Address | undefined);
 
   const navTabs = [
     { id: "home" as Tab, label: t.home, Icon: Home },
@@ -172,6 +187,7 @@ function AppInner() {
     { id: "docs" as Tab, label: t.docs, Icon: BookOpen },
     { id: "dashboard" as Tab, label: t.portfolio, Icon: LayoutDashboard },
     { id: "analytics" as Tab, label: t.analytics, Icon: BarChart3 },
+    { id: "security" as Tab, label: language === "ko" ? "보안 및 거버넌스" : "Security & Risk", Icon: ShieldAlert },
     { id: "history" as Tab, label: t.history, Icon: HistoryIcon },
   ];
 
@@ -284,6 +300,7 @@ function AppInner() {
             </span>
           </div>
           <div style={{ display: "flex", alignItems: "center", gap: 10 }}>
+            <CurrencySelector />
             <LanguageToggle compact />
             <button onClick={toggleTheme} aria-label="Toggle theme"
               style={{ width: 38, height: 38, borderRadius: 10, border: "1px solid var(--border)", background: "var(--muted)", color: "var(--foreground)", display: "flex", alignItems: "center", justifyContent: "center", cursor: "pointer" }}>
@@ -389,10 +406,10 @@ function AppInner() {
         <div style={{ position: "relative", zIndex: 1, maxWidth: 1240, margin: "0 auto 2rem", padding: isMobile ? "0 1.25rem" : "0 2.5rem" }}>
           <div style={{ display: "grid", gridTemplateColumns: isMobile ? "1fr 1fr" : "repeat(4, 1fr)", gap: 12 }}>
             {[
-              { label: "BLOCK FINALITY", value: "0.2s", sub: "Flashblocks Speed", icon: Zap },
-              { label: "AVERAGE GAS", value: "< $0.0001", sub: "OP Stack L2", icon: Sparkles },
+              { label: "PRECONFIRMATION", value: "0.2s", sub: "Flashblocks Speed", icon: Zap },
+              { label: "GAS", value: "Variable", sub: "Estimated by wallet", icon: Sparkles },
               { label: "GIWA CHAIN ID", value: "91342", sub: "Sepolia Testnet", icon: HanokMark },
-              { label: "SECURITY", value: "100%", sub: "Self-Custodial", icon: Check },
+              { label: "CUSTODY", value: "Your wallet", sub: "Wallet-signed swaps", icon: Check },
             ].map((stat, i) => (
               <div key={i} style={{ padding: "14px 18px", borderRadius: 16, background: "var(--card)", border: "1px solid var(--border)", display: "flex", alignItems: "center", justifyContent: "space-between" }}>
                 <div>
@@ -418,7 +435,7 @@ function AppInner() {
                   <Repeat size={22} />
                 </div>
                 <span style={{ fontSize: 11, fontWeight: 800, padding: "4px 10px", borderRadius: 8, background: "var(--muted)", color: "var(--foreground)" }}>
-                  0.2s EXECUTION
+                  0.2s PRECONFIRMATION
                 </span>
               </div>
               <div>
@@ -426,7 +443,7 @@ function AppInner() {
                   {language === "ko" ? "초고속 DEX 스왑" : "Instant DEX Swap"}
                 </h3>
                 <p style={{ fontSize: 13, color: "var(--muted-foreground)", margin: 0, lineHeight: 1.5 }}>
-                  {language === "ko" ? "ETH, USDC, KRWC, EURC 및 커스텀 토큰을 최저 슬리피지로 교환하세요." : "Swap native ETH, testnet stablecoins, and custom tokens with sub-second finality."}
+                  {language === "ko" ? "GIWA Sepolia 스왑 미리보기. 실제 거래에는 배포된 토큰과 유동성이 필요합니다." : "Preview GIWA Sepolia swaps. Live trading requires deployed tokens and funded pools."}
                 </p>
               </div>
               <div style={{ display: "flex", alignItems: "center", gap: 6, fontSize: 13, fontWeight: 700, color: "var(--primary)" }}>
@@ -445,7 +462,7 @@ function AppInner() {
                   <Coins size={22} />
                 </div>
                 <span style={{ fontSize: 11, fontWeight: 800, padding: "4px 10px", borderRadius: 8, background: "var(--muted)", color: "var(--foreground)" }}>
-                  1-CLICK NO-CODE
+                  LOCAL PREVIEW
                 </span>
               </div>
               <div>
@@ -453,7 +470,7 @@ function AppInner() {
                   {language === "ko" ? "1-클릭 토큰 발행기" : "1-Click Token Deployer"}
                 </h3>
                 <p style={{ fontSize: 13, color: "var(--muted-foreground)", margin: 0, lineHeight: 1.5 }}>
-                  {language === "ko" ? "나만의 Giwa Sepolia ERC-20 토큰을 생성하고 메타마스크에 즉시 추가하세요." : "Deploy custom ERC-20 tokens onto Giwa Sepolia with live preview & wallet integration."}
+                  {language === "ko" ? "토큰 생성 화면을 미리 볼 수 있습니다. 온체인 배포는 연결되지 않았습니다." : "Preview token creation. On-chain deployment is not connected."}
                 </p>
               </div>
               <div style={{ display: "flex", alignItems: "center", gap: 6, fontSize: 13, fontWeight: 700, color: "var(--primary)" }}>
@@ -480,7 +497,7 @@ function AppInner() {
                   {language === "ko" ? "유동성 풀 & 수수료 보상" : "Liquidity Pools & Yield"}
                 </h3>
                 <p style={{ fontSize: 13, color: "var(--muted-foreground)", margin: 0, lineHeight: 1.5 }}>
-                  {language === "ko" ? "집중 유동성(CLAMM) 및 스테이블스왑 풀에 공급하여 거래 수수료를 수취하세요." : "Provide liquidity to concentrated CLAMM or Stableswap pairs and manage LP positions."}
+                  {language === "ko" ? "스테이블 풀을 탐색하세요. 집중 유동성 쓰기는 포지션 매니저 연결 전까지 비활성화됩니다." : "Explore stable pools. Concentrated liquidity writes require a position manager and are disabled."}
                 </p>
               </div>
               <div style={{ display: "flex", alignItems: "center", gap: 6, fontSize: 13, fontWeight: 700, color: "var(--primary)" }}>
@@ -507,7 +524,7 @@ function AppInner() {
                   {language === "ko" ? "테스트넷 브릿지 & 수도꼭지" : "Testnet Bridge & Faucet"}
                 </h3>
                 <p style={{ fontSize: 13, color: "var(--muted-foreground)", margin: 0, lineHeight: 1.5 }}>
-                  {language === "ko" ? "1,000 USDC, 1,000,000 KRWC를 1초 만에 무료 지급받고 Sepolia L1과 브릿지하세요." : "Instantly claim testnet USDC, KRWC, EURC or bridge assets from Sepolia L1 to Giwa L2."}
+                  {language === "ko" ? "공식 GIWA ETH 수도꼭지를 이용하거나 Sepolia L1에서 ETH를 브릿지하세요." : "Use the official GIWA ETH faucet or bridge ETH from Sepolia L1."}
                 </p>
               </div>
               <div style={{ display: "flex", alignItems: "center", gap: 6, fontSize: 13, fontWeight: 700, color: "var(--primary)" }}>
@@ -656,6 +673,27 @@ function AppInner() {
 
           {/* Header */}
           <header style={{ display: "flex", flexWrap: "wrap", justifyContent: "flex-end", alignItems: "center", gap: 10, padding: isMobile ? "0.85rem 1rem" : "1rem 2rem" }}>
+            <CurrencySelector />
+            <button
+              onClick={() => setShowTaxModal(true)}
+              title={language === 'ko' ? '국세청(NTS) 가상자산 세금 계산기' : 'NTS Crypto Tax Exporter'}
+              style={{
+                display: 'flex',
+                alignItems: 'center',
+                gap: 6,
+                padding: '6px 12px',
+                borderRadius: 10,
+                border: '1px solid var(--border)',
+                background: 'var(--card)',
+                color: 'var(--foreground)',
+                fontSize: 12,
+                fontWeight: 700,
+                cursor: 'pointer',
+              }}
+            >
+              <FileSpreadsheet size={14} color="#3b82f6" />
+              <span>{language === 'ko' ? 'NTS 세금계산' : 'Tax Export'}</span>
+            </button>
             <LanguageToggle />
             <button onClick={toggleTheme} aria-label="Toggle theme" title={isDark ? "Switch to Light Theme" : "Switch to Dark Theme"}
               style={{ width: 36, height: 36, borderRadius: 10, border: "1px solid var(--border)", background: "var(--card)", color: "var(--foreground)", display: "flex", alignItems: "center", justifyContent: "center", cursor: "pointer" }}>
@@ -663,6 +701,12 @@ function AppInner() {
             </button>
             <NotificationCenter />
             <div style={{ width: 1, height: 18, background: "var(--border)" }} />
+            {wallet && (
+              <UpIdBadge
+                profile={dojangProfile}
+                onClick={() => setShowDojangModal(true)}
+              />
+            )}
             <div style={{ display: "flex", alignItems: "center", gap: 6, padding: "6px 12px", borderRadius: 999, background: "var(--muted)", border: "1px solid var(--border)" }}>
               <span className="prism-live-dot" style={{ width: 6, height: 6, borderRadius: "50%", background: "var(--primary)", boxShadow: "0 0 6px var(--primary)" }} />
               <span style={{ fontSize: 11.5, fontWeight: 700, color: "var(--foreground)" }}>
@@ -670,10 +714,11 @@ function AppInner() {
               </span>
             </div>
             {wallet ? (
-              <button onClick={copyAddress}
+              <button onClick={() => setShowDojangModal(true)}
                 className="prism-mono"
+                title="Dojang Identity & Wallet"
                 style={{ display: "flex", alignItems: "center", gap: 6, padding: "6px 12px", borderRadius: 999, background: "var(--card)", border: "1px solid var(--border)", color: "var(--foreground)", fontSize: 12, fontWeight: 600, cursor: "pointer" }}>
-                {shortAddr}
+                {dojangProfile.upIdName || shortAddr}
               </button>
             ) : (
               <button onClick={() => setShowConnectModal(true)}
@@ -682,6 +727,18 @@ function AppInner() {
               </button>
             )}
           </header>
+
+          <DojangIdentityModal
+            isOpen={showDojangModal}
+            onClose={() => setShowDojangModal(false)}
+            address={wallet?.address as Address | undefined}
+          />
+
+          <KoreanTaxModal
+            isOpen={showTaxModal}
+            onClose={() => setShowTaxModal(false)}
+            userAddress={wallet?.address}
+          />
 
           <div style={{ padding: isMobile ? "1rem" : "2rem" }}>
             <div key={tab} className="prism-page" style={{ maxWidth: isMobile ? "100%" : (tab === "home" ? 1200 : tab === "docs" || tab === "create-token" ? 960 : tab === "dashboard" || tab === "swap" || tab === "bridge" || tab === "history" ? 920 : 760), margin: "0 auto" }}>
@@ -703,7 +760,21 @@ function AppInner() {
               {tab === "create-token" && <GiwaTokenDeployer provider={wallet?.provider} address={wallet?.address} onNavigateToPools={() => setTab("pools")} onNavigateToDocs={() => setTab("docs")} />}
               {tab === "docs" && <GiwaDocsGuide provider={wallet?.provider} onNavigateToDeployer={() => setTab("create-token")} onNavigateToPools={() => setTab("pools")} onNavigateToSwap={() => setTab("swap")} />}
               {tab === "dashboard" && <DashboardMainnet address={wallet ? wallet.address : "0x0000000000000000000000000000000000000000"} balances={balances} provider={wallet?.provider} onNavigate={(t) => setTab(t as Tab)} />}
-              {tab === "analytics" && <StablecoinAnalytics onNavigate={(t) => setTab(t as Tab)} />}
+              {tab === "analytics" && (
+                <PortfolioAnalytics
+                  userAddress={wallet?.address}
+                  onNavigateToPools={() => setTab("pools")}
+                  onNavigateToSwap={() => setTab("swap")}
+                />
+              )}
+              {tab !== "docs" && (
+                <p role="note" style={{ padding: 12, border: '1px solid var(--border)', borderRadius: 8, fontSize: 13 }}>
+                  {language === 'ko'
+                    ? '테스트넷 미리보기: 신원 배지, 지정가 주문, DCA, 토큰 출시, 파밍 및 거버넌스는 로컬 시뮬레이션이며 온체인 검증이나 거래가 아닙니다.'
+                    : 'Testnet preview: identity badges, limit orders, DCA, token launches, farming, and governance are local simulations. These actions do not verify identity or execute on-chain transactions.'}
+                </p>
+              )}
+              {tab === "security" && <SecurityGovernancePanel />}
               {tab === "history" && <TxHistory address={wallet ? wallet.address : "0x0000000000000000000000000000000000000000"} />}
             </div>
           </div>

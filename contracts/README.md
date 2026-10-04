@@ -1,4 +1,8 @@
-# FlowFi Smart Contracts (Arc Testnet)
+# Smart contract documentation
+
+The Arc inventory below is historical and does not describe the current GIWA prototype. Current GIWA source is under `core/`, `periphery/`, `dojang/`, `governance/`, `yield/`, `launchpad/`, and `pool/`. See [TESTNET_AUDIT.md](../docs/TESTNET_AUDIT.md) before using deployment scripts or treating a feature as live.
+
+## Historical FlowFi contracts (Arc Testnet)
 
 Source for the contracts that were redeployed after the security review documented in [`SECURITY.md`](../SECURITY.md), plus one newer addition below.
 

@@ -38,7 +38,8 @@ contract GiwaStablePool is IGiwaStablePool, TransientReentrancyGuard {
     ) {
         coinsList[0] = token0;
         coinsList[1] = token1;
-        fee = uint256(_fee) * 10**6; // normalized to 10^10 scale
+        require(_fee < 1000000, "StablePool: INVALID_FEE");
+        fee = uint256(_fee) * 10**4; // factory pips (10^6) -> pool denominator (10^10)
         feeVault = _feeVault;
         A = 100 * A_PRECISION; // Default A = 100
 
@@ -296,9 +297,12 @@ contract GiwaStablePool is IGiwaStablePool, TransientReentrancyGuard {
     }
 
     function _safeTransferFrom(address token, address from, address to, uint256 value) private {
+        require(token.code.length > 0, "StablePool: TOKEN_NOT_CONTRACT");
+        uint256 beforeBalance = IERC20Stable(token).balanceOf(to);
         (bool success, bytes memory data) = token.call(
             abi.encodeWithSelector(IERC20Stable.transferFrom.selector, from, to, value)
         );
         require(success && (data.length == 0 || abi.decode(data, (bool))), "StablePool: TRANSFER_FROM_FAILED");
+        require(IERC20Stable(token).balanceOf(to) == beforeBalance + value, "StablePool: UNSUPPORTED_TRANSFER_FEE");
     }
 }

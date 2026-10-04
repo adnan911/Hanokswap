@@ -1,0 +1,65 @@
+{
+  "checkedAt": "2026-10-01T19:30:51.782Z",
+  "chainId": 91342,
+  "records": [
+    {
+      "name": "GIWA_DEX_FACTORY",
+      "address": "0xde7e4fdaaef35680adb15f026a5087801366c316",
+      "deployed": true
+    },
+    {
+      "name": "GIWA_DEX_ROUTER",
+      "address": "0xb8b68746130e71b9f9d7b6af2a69d221ecc7e78f",
+      "deployed": true
+    },
+    {
+      "name": "GIWA_POOL_WETH_USDC",
+      "address": "0xE9c27006b15E681C0edE87a37Bbb678E7F201F7C",
+      "deployed": true
+    },
+    {
+      "name": "GIWA_POOL_USDC_EURC",
+      "address": "0xd618c9bFED8DdfB7Eed03450940B62E2E3cb91b1",
+      "deployed": true
+    },
+    {
+      "name": "GIWA_WETH",
+      "address": "0x4200000000000000000000000000000000000006",
+      "deployed": true
+    },
+    {
+      "name": "USDC_ADDRESS",
+      "address": "0x3600000000000000000000000000000000000000",
+      "deployed": false
+    },
+    {
+      "name": "EURC_ADDRESS",
+      "address": "0x89B50855Aa3bE2F677cD6303Cec089B5F319D72a",
+      "deployed": false
+    },
+    {
+      "name": "KRWC_ADDRESS",
+      "address": "0x89C0000000000000000000000000000000000001",
+      "deployed": false
+    },
+    {
+      "name": "GIWA_DOJANG_SCROLL",
+      "address": "0x89C1000000000000000000000000000000000002",
+      "deployed": false
+    },
+    {
+      "name": "GIWA_DCA_STREAMER",
+      "address": "0x89C2000000000000000000000000000000000002",
+      "deployed": false
+    },
+    {
+      "name": "GIWA_BONDING_CURVE_LAUNCHPAD",
+      "address": "0x89C5000000000000000000000000000000000001",
+      "deployed": false
+    }
+  ],
+  "routerReads": {
+    "factory": "0xDe7E4FdAAeF35680ADB15f026a5087801366C316",
+    "permit2": "The contract function \"permit2\" reverted."
+  }
+}

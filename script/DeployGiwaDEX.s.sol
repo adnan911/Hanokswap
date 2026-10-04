@@ -54,7 +54,7 @@ contract DeployGiwaDEX {
         stableDeployer.setFactory(factoryAddr);
 
         // 4. Deploy Giwa Universal Router
-        GiwaUniversalRouter router = new GiwaUniversalRouter(factoryAddr, WETH9);
+        GiwaUniversalRouter router = new GiwaUniversalRouter(factoryAddr, WETH9, 0x000000000022D473030F116dDEE9F6B43aC78BA3);
         routerAddr = address(router);
 
         // 5. Deploy Genesis Liquidity Pools

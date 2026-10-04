@@ -1,12 +1,14 @@
 # Hanokswap
 
-Next-generation decentralized exchange and token launchpad engineered for the **GIWA Sepolia Testnet** (`Chain ID: 91342`). Powered by OP Stack Layer 2 and 0.2s sub-second Flashblocks finality.
+Decentralized exchange prototype for the **GIWA Sepolia Testnet** (`Chain ID: 91342`). GIWA provides approximately 200ms Flashblocks preconfirmations; these are not final settlement.
+
+**Launch status:** not ready for a public testnet launch. Identity, limit orders, DCA, launches, farming, and governance UI currently include local simulations and placeholder addresses. See [the testnet audit](docs/TESTNET_AUDIT.md) for verified fixes, limitations, and development priorities.
 
 ## Features
-- **0.2s Flashblocks DEX:** Ultra-low latency swap with minimal slippage across Giwa testnet assets (ETH, WETH, USDC, KRWC, EURC, USYC).
-- **1-Click ERC-20 Token Deployer:** Launch custom tokens directly onto Giwa Sepolia with live preview, auto-wallet watch asset integration, and local registry.
-- **Concentrated Liquidity & Stableswap Pools:** Factory & Router supporting CLAMM (Uni V3 model) and Stableswap (Curve model).
-- **Testnet Bridge & Faucet:** Native L1 Sepolia ⇄ L2 Giwa Sepolia standard bridge with built-in 1-click testnet token faucet.
+- **Swap execution:** ABI-encoded routes, pool/token deployment checks, approvals, on-chain simulation, and receipt validation. Current configured stablecoin addresses are undeployed, so these pairs are blocked.
+- **Token deployer preview:** Local simulation; real ERC-20 deployment and launch migration are not connected.
+- **Liquidity:** CLAMM and stableswap contract prototypes. UI stable deposits require real deployments; CL positions require a position manager and are blocked.
+- **ETH bridge & faucet:** Source-chain bridge submission with simulation and receipts; official faucet links. L2 withdrawals still need external proving/finalization, and ERC-20 bridge mappings are not configured.
 - **Developer Documentation & Guide:** Complete interactive setup guide with RPC parameters, smart contract ABIs, and code snippets (Foundry, Hardhat, viem).
 - **Bilingual Experience:** Seamless instant toggle between English and Korean (`한국어`).
 

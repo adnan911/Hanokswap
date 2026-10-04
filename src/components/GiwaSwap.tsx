@@ -1,12 +1,12 @@
-import { useState, useEffect } from 'react';
+import { useState, useEffect, useMemo } from 'react';
 import type { EIP1193Provider } from 'viem';
 import {
   createWalletClient,
   createPublicClient,
   custom,
   http,
-  parseUnits,
   formatUnits,
+  parseAbi,
   type Address,
 } from 'viem';
 import { giwaSepolia, GIWA_FLASHBLOCKS_RPC } from '../chains';
@@ -19,9 +19,28 @@ import {
   USYC_ADDRESS,
 } from '../contracts';
 import { showToast } from '../toast';
-import { waitForSuccess } from '../txHelpers';
 import { useLanguage } from '../LanguageContext';
 import { useIsMobile } from '../useIsMobile';
+import { useDojang } from '../hooks/useDojang';
+import { isTokenDojangVerified } from '../lib/dojang';
+import { computeSmartOrderRoute, type SORRoute } from '../lib/sor';
+import { buildSwapParams, minimumSwapOutput, SWAP_ROUTER_ABI } from '../lib/swapExecution';
+import { waitForSuccess } from '../txHelpers';
+import {
+  getDEXLimitOrders,
+  saveDEXLimitOrder,
+  cancelDEXLimitOrder,
+  fillDEXLimitOrder,
+  type DEXLimitOrder,
+} from '../lib/limitOrders';
+import {
+  getDEXDCAStreams,
+  saveDEXDCAStream,
+  cancelDEXDCAStream,
+  executeNextDCAInterval,
+  type DEXDCAStream,
+} from '../lib/dca';
+import { DojangIdentityModal } from './DojangIdentityModal';
 import {
   ArrowDownUp,
   Settings2,
@@ -30,8 +49,10 @@ import {
   ExternalLink,
   ChevronDown,
   RefreshCw,
-  Sparkles,
-  TrendingUp,
+  ShieldCheck,
+  Award,
+  Clock,
+  Sliders,
 } from 'lucide-react';
 
 interface TokenItem {
@@ -119,6 +140,8 @@ const ERC20_ABI = [
   },
 ] as const;
 
+type TradingMode = 'MARKET' | 'LIMIT' | 'DCA';
+
 interface Props {
   provider?: EIP1193Provider;
   address?: string;
@@ -130,40 +153,35 @@ export default function GiwaSwap({ provider, address, onNavigateToDocs, onNaviga
   const { t, language } = useLanguage();
   const isMobile = useIsMobile();
 
-  const [tokens, setTokens] = useState<TokenItem[]>(DEFAULT_TOKENS);
+  const [mode, setMode] = useState<TradingMode>('MARKET');
+  const tokens = DEFAULT_TOKENS;
   const [fromToken, setFromToken] = useState<TokenItem>(DEFAULT_TOKENS[0]); // ETH
   const [toToken, setToToken] = useState<TokenItem>(DEFAULT_TOKENS[2]); // USDC
   const [fromAmount, setFromAmount] = useState<string>('0.1');
-  const [toAmount, setToAmount] = useState<string>('315.50');
   const [slippage, setSlippage] = useState<number>(0.5);
   const [showSettings, setShowSettings] = useState(false);
   const [showFromModal, setShowFromModal] = useState(false);
   const [showToModal, setShowToModal] = useState(false);
+  const [usePermit2, setUsePermit2] = useState(false);
+
+  // Limit Order parameters
+  const [limitTargetPrice, setLimitTargetPrice] = useState<string>('3150.00');
+  const [limitDurationDays, setLimitDurationDays] = useState<number>(7);
+
+  // DCA parameters
+  const [dcaFrequency, setDcaFrequency] = useState<'HOURLY' | 'DAILY' | 'WEEKLY'>('DAILY');
+  const [dcaTotalOrders, setDcaTotalOrders] = useState<number>(10);
 
   const [fromBalance, setFromBalance] = useState<string>('0.00');
   const [toBalance, setToBalance] = useState<string>('0.00');
   const [isSwapping, setIsSwapping] = useState(false);
   const [txHash, setTxHash] = useState<string | null>(null);
+  const [showDojangModal, setShowDojangModal] = useState(false);
 
-  // Load custom tokens from localStorage if created by user
-  useEffect(() => {
-    try {
-      const stored = localStorage.getItem('giwa-custom-tokens');
-      if (stored) {
-        const parsed = JSON.parse(stored);
-        if (Array.isArray(parsed) && parsed.length > 0) {
-          const customItems: TokenItem[] = parsed.map((item: any) => ({
-            symbol: item.symbol,
-            name: item.name,
-            address: item.address as Address,
-            decimals: item.decimals || 18,
-            icon: '🪙',
-          }));
-          setTokens([...DEFAULT_TOKENS, ...customItems]);
-        }
-      }
-    } catch {}
-  }, []);
+  const [openLimitOrders, setOpenLimitOrders] = useState<DEXLimitOrder[]>([]);
+  const [activeDCAStreams, setActiveDCAStreams] = useState<DEXDCAStream[]>([]);
+
+  const { profile: dojangProfile } = useDojang(address as Address | undefined);
 
   // Public client on Giwa Sepolia Flashblocks
   const publicClient = createPublicClient({
@@ -171,82 +189,76 @@ export default function GiwaSwap({ provider, address, onNavigateToDocs, onNaviga
     transport: http(GIWA_FLASHBLOCKS_RPC),
   });
 
-  // Fetch balances
-  const refreshBalances = async () => {
-    if (!address) {
-      setFromBalance('0.00');
-      setToBalance('0.00');
-      return;
-    }
+  // Calculate Smart Order Route dynamically
+  const smartRoute: SORRoute = useMemo(() => {
+    return computeSmartOrderRoute(
+      fromToken.address,
+      toToken.address,
+      fromToken.symbol,
+      toToken.symbol,
+      fromAmount,
+      slippage
+    );
+  }, [fromToken, toToken, fromAmount, slippage]);
 
+  const toAmount = smartRoute.expectedAmountOut;
+
+  // Refresh limit orders & DCA streams
+  const reloadOrdersAndStreams = () => {
+    if (address) {
+      setOpenLimitOrders(getDEXLimitOrders(address as Address));
+      setActiveDCAStreams(getDEXDCAStreams(address as Address));
+    }
+  };
+
+  useEffect(() => {
+    reloadOrdersAndStreams();
+    const handleOrderUpdate = () => reloadOrdersAndStreams();
+    window.addEventListener('giwa_limit_orders_updated', handleOrderUpdate);
+    window.addEventListener('giwa_dca_streams_updated', handleOrderUpdate);
+    return () => {
+      window.removeEventListener('giwa_limit_orders_updated', handleOrderUpdate);
+      window.removeEventListener('giwa_dca_streams_updated', handleOrderUpdate);
+    };
+  }, [address]);
+
+  // Load balances
+  const refreshBalances = async () => {
+    if (!address) return;
     try {
       if (fromToken.isNative) {
         const bal = await publicClient.getBalance({ address: address as Address });
         setFromBalance(Number(formatUnits(bal, 18)).toFixed(4));
       } else {
-        const bal = await publicClient.readContract({
+        const bal = (await publicClient.readContract({
           address: fromToken.address,
           abi: ERC20_ABI,
           functionName: 'balanceOf',
           args: [address as Address],
-        });
-        setFromBalance(Number(formatUnits(bal, fromToken.decimals)).toFixed(4));
+        })) as bigint;
+        setFromBalance(Number(formatUnits(bal, fromToken.decimals)).toFixed(2));
       }
 
       if (toToken.isNative) {
         const bal = await publicClient.getBalance({ address: address as Address });
         setToBalance(Number(formatUnits(bal, 18)).toFixed(4));
       } else {
-        const bal = await publicClient.readContract({
+        const bal = (await publicClient.readContract({
           address: toToken.address,
           abi: ERC20_ABI,
           functionName: 'balanceOf',
           args: [address as Address],
-        });
-        setToBalance(Number(formatUnits(bal, toToken.decimals)).toFixed(4));
+        })) as bigint;
+        setToBalance(Number(formatUnits(bal, toToken.decimals)).toFixed(2));
       }
-    } catch {
-      // Fallback
-      setFromBalance('1.5000');
-      setToBalance('450.0000');
+    } catch (e) {
+      console.error('Failed to load balances:', e);
     }
   };
 
   useEffect(() => {
     refreshBalances();
-    const interval = setInterval(refreshBalances, 12000);
-    return () => clearInterval(interval);
   }, [address, fromToken, toToken]);
-
-  // Calculate simulated rate based on testnet pairs
-  useEffect(() => {
-    const val = parseFloat(fromAmount) || 0;
-    if (val <= 0) {
-      setToAmount('0.00');
-      return;
-    }
-
-    let rate = 1;
-    if (fromToken.symbol === 'ETH' || fromToken.symbol === 'WETH') {
-      if (toToken.symbol === 'USDC' || toToken.symbol === 'USYC') rate = 3150;
-      else if (toToken.symbol === 'KRWC') rate = 4325000;
-      else if (toToken.symbol === 'EURC') rate = 2950;
-    } else if (fromToken.symbol === 'USDC') {
-      if (toToken.symbol === 'ETH' || toToken.symbol === 'WETH') rate = 1 / 3150;
-      else if (toToken.symbol === 'KRWC') rate = 1370;
-      else if (toToken.symbol === 'EURC') rate = 0.93;
-    } else if (fromToken.symbol === 'KRWC') {
-      if (toToken.symbol === 'ETH' || toToken.symbol === 'WETH') rate = 1 / 4325000;
-      else if (toToken.symbol === 'USDC') rate = 1 / 1370;
-      else if (toToken.symbol === 'EURC') rate = 1 / 1475;
-    } else if (fromToken.symbol === 'EURC') {
-      if (toToken.symbol === 'USDC') rate = 1.075;
-      else if (toToken.symbol === 'KRWC') rate = 1475;
-      else if (toToken.symbol === 'ETH' || toToken.symbol === 'WETH') rate = 1 / 2950;
-    }
-
-    setToAmount((val * rate).toFixed(toToken.decimals === 18 ? 4 : 2));
-  }, [fromAmount, fromToken, toToken]);
 
   const handleSwapTokens = () => {
     const temp = fromToken;
@@ -254,7 +266,8 @@ export default function GiwaSwap({ provider, address, onNavigateToDocs, onNaviga
     setToToken(temp);
   };
 
-  const executeSwap = async () => {
+  // 1. Market Swap Execution (with SOR & Permit2)
+  const executeMarketSwap = async () => {
     if (!provider || !address) {
       showToast('Please connect your wallet first', 'error');
       return;
@@ -270,32 +283,50 @@ export default function GiwaSwap({ provider, address, onNavigateToDocs, onNaviga
         transport: custom(provider),
       });
 
-      // If fromToken is not native, check approval
-      if (!fromToken.isNative) {
-        showToast(language === 'ko' ? '토큰 승인 요청 중...' : 'Approving token allowance...', 'info');
-        const parsedAmount = parseUnits(fromAmount || '0', fromToken.decimals);
-
-        const approveHash = await walletClient.writeContract({
-          address: fromToken.address,
-          abi: ERC20_ABI,
-          functionName: 'approve',
-          args: [GIWA_DEX_ROUTER, parsedAmount],
-        });
-
-        await waitForSuccess(publicClient, approveHash);
+      if (toToken.isNative) throw new Error('Select WETH as the output. Atomic native ETH output is not supported yet.');
+      if (usePermit2 && !fromToken.isNative) throw new Error('Permit2 swap execution is not connected yet. Turn off Permit2 to use a token approval.');
+      const params = buildSwapParams(smartRoute, address as Address, fromToken.decimals, BigInt(Math.floor(Date.now() / 1000) + 1200));
+      for (const token of new Set(params.hops.flatMap(hop => [hop.tokenIn, hop.tokenOut]))) {
+        const code = await publicClient.getBytecode({ address: token });
+        if (!code || code === '0x') throw new Error('A selected token is not deployed on GIWA Sepolia. This pair is unavailable.');
       }
+      // Resolve the entire route before asking for an approval or spending gas.
+      const factory = await publicClient.readContract({ address: GIWA_DEX_ROUTER, abi: parseAbi(['function factory() view returns (address)']), functionName: 'factory' });
+      for (const hop of params.hops) {
+        const pool = await publicClient.readContract({ address: factory, abi: parseAbi(['function getPool(address,address,uint24,bool) view returns (address)']), functionName: 'getPool', args: [hop.tokenIn, hop.tokenOut, hop.fee, hop.isStable] });
+        if (pool === '0x0000000000000000000000000000000000000000') throw new Error('This pair has no deployed pool. Choose a supported pair.');
+        const poolCode = await publicClient.getBytecode({ address: pool });
+        if (!poolCode || poolCode === '0x') throw new Error('The route pool is not deployed.');
+      }
+      if (!fromToken.isNative) {
+        const allowance = await publicClient.readContract({ address: fromToken.address, abi: ERC20_ABI, functionName: 'allowance', args: [address as Address, GIWA_DEX_ROUTER] });
+        if (allowance < params.amountIn) {
+          if (allowance > 0n) {
+            const reset = await walletClient.writeContract({ address: fromToken.address, abi: ERC20_ABI, functionName: 'approve', args: [GIWA_DEX_ROUTER, 0n] });
+            await waitForSuccess(publicClient, reset);
+          }
+          const approval = await walletClient.writeContract({ address: fromToken.address, abi: ERC20_ABI, functionName: 'approve', args: [GIWA_DEX_ROUTER, params.amountIn] });
+          await waitForSuccess(publicClient, approval);
+        }
+      }
+      const value = fromToken.isNative ? params.amountIn : 0n;
+      const simulation = await publicClient.simulateContract({ address: GIWA_DEX_ROUTER, abi: SWAP_ROUTER_ABI, functionName: 'exactInputMultiHop', args: [params], account: address as Address, value });
+      params.amountOutMinimum = minimumSwapOutput(simulation.result, slippage);
+      const checked = await publicClient.simulateContract({ address: GIWA_DEX_ROUTER, abi: SWAP_ROUTER_ABI, functionName: 'exactInputMultiHop', args: [params], account: address as Address, value });
 
-      showToast(language === 'ko' ? 'Giwa Flashblocks 스왑 실행 중 (0.2s)...' : 'Executing swap with Flashblocks (0.2s)...', 'info');
+      showToast(
+        language === 'ko'
+          ? `[0.2s Flashblocks] ${fromToken.symbol} ➔ ${toToken.symbol} 스왑 제출 중...`
+          : `[0.2s Flashblocks] Submitting ${fromToken.symbol} ➔ ${toToken.symbol} swap...`,
+        'info'
+      );
 
-      // Execute dummy/simulated transfer or native call for testnet
-      const hash = await walletClient.sendTransaction({
-        to: GIWA_DEX_ROUTER,
-        value: fromToken.isNative ? parseUnits(fromAmount || '0', 18) : 0n,
-        data: '0x38ed1739', // swapExactTokensForTokens signature
-      });
+      const hash = await walletClient.writeContract(checked.request);
 
       setTxHash(hash);
-      showToast(language === 'ko' ? '스왑이 성공적으로 완료되었습니다!' : 'Swap successfully executed on Giwa Sepolia!', 'success');
+      showToast('Swap submitted. Waiting for confirmation...', 'info');
+      await waitForSuccess(publicClient, hash);
+      showToast(language === 'ko' ? '스왑이 성공적으로 확정되었습니다!' : 'Swap successfully executed on Giwa Sepolia!', 'success');
       refreshBalances();
     } catch (err: any) {
       console.error('Swap failed:', err);
@@ -305,8 +336,79 @@ export default function GiwaSwap({ provider, address, onNavigateToDocs, onNaviga
     }
   };
 
+  // 2. Limit Order Creation
+  const handleCreateLimitOrder = async () => {
+    if (!address) {
+      showToast('Please connect your wallet first', 'error');
+      return;
+    }
+
+    const orderId = `limit_${Date.now()}`;
+    const newOrder: DEXLimitOrder = {
+      id: orderId,
+      maker: address as Address,
+      tokenInSymbol: fromToken.symbol,
+      tokenOutSymbol: toToken.symbol,
+      tokenInAddress: fromToken.address,
+      tokenOutAddress: toToken.address,
+      amountIn: fromAmount,
+      targetPriceUSD: parseFloat(limitTargetPrice) || 0,
+      minAmountOut: toAmount,
+      createdAt: Date.now(),
+      expiresAt: Date.now() + limitDurationDays * 86400 * 1000,
+      status: 'OPEN',
+      isBuy: fromToken.symbol === 'USDC' || fromToken.symbol === 'KRWC',
+    };
+
+    saveDEXLimitOrder(newOrder);
+    showToast(
+      language === 'ko'
+        ? `지정가 주문 등록 완료! (0.2s Flashblocks 감시 활성)`
+        : `Limit order created! (0.2s Flashblocks trigger active)`,
+      'success'
+    );
+  };
+
+  // 3. DCA Stream Creation
+  const handleCreateDCA = async () => {
+    if (!address) {
+      showToast('Please connect your wallet first', 'error');
+      return;
+    }
+
+    const intervalSec = dcaFrequency === 'HOURLY' ? 3600 : dcaFrequency === 'DAILY' ? 86400 : 604800;
+    const amountPer = (parseFloat(fromAmount) / dcaTotalOrders).toFixed(4);
+
+    const streamId = `dca_${Date.now()}`;
+    const newStream: DEXDCAStream = {
+      id: streamId,
+      owner: address as Address,
+      tokenInSymbol: fromToken.symbol,
+      tokenOutSymbol: toToken.symbol,
+      tokenInAddress: fromToken.address,
+      tokenOutAddress: toToken.address,
+      totalAmountIn: fromAmount,
+      amountPerInterval: amountPer,
+      frequency: dcaFrequency,
+      intervalSeconds: intervalSec,
+      totalIntervals: dcaTotalOrders,
+      intervalsCompleted: 0,
+      createdAt: Date.now(),
+      nextExecutionTime: Date.now() + intervalSec * 1000,
+      status: 'ACTIVE',
+    };
+
+    saveDEXDCAStream(newStream);
+    showToast(
+      language === 'ko'
+        ? `DCA 자동 적립식 스트림이 시작되었습니다 (${dcaTotalOrders}회 분할)`
+        : `DCA auto-invest stream active (${dcaTotalOrders} orders schedule)`,
+      'success'
+    );
+  };
+
   return (
-    <div style={{ maxWidth: 520, margin: '0 auto', display: 'flex', flexDirection: 'column', gap: 20 }}>
+    <div style={{ maxWidth: 540, margin: '0 auto', display: 'flex', flexDirection: 'column', gap: 16 }}>
       {/* Top Banner: Giwa Testnet & Flashblocks */}
       <div
         style={{
@@ -336,10 +438,10 @@ export default function GiwaSwap({ provider, address, onNavigateToDocs, onNaviga
           </div>
           <div>
             <div style={{ fontSize: 13, fontWeight: 700, color: 'var(--foreground)' }}>
-              GIWA Sepolia Testnet (91342)
+              GIWA Sepolia Testnet · 0.2s Flashblocks
             </div>
             <div style={{ fontSize: 11, color: 'var(--muted-foreground)' }}>
-              {language === 'ko' ? '초고속 200ms Flashblocks DEX' : 'Sub-second 200ms Flashblocks DEX'}
+              {language === 'ko' ? '경로 미리보기 · 표준 승인' : 'Route preview · standard approval'}
             </div>
           </div>
         </div>
@@ -358,7 +460,88 @@ export default function GiwaSwap({ provider, address, onNavigateToDocs, onNaviga
         </div>
       </div>
 
-      {/* Main Swap Card */}
+      {/* Trading Mode Switcher */}
+      <div
+        style={{
+          display: 'flex',
+          background: 'var(--card)',
+          border: '1px solid var(--border)',
+          borderRadius: 14,
+          padding: 4,
+          gap: 4,
+        }}
+      >
+        <button
+          onClick={() => setMode('MARKET')}
+          style={{
+            flex: 1,
+            padding: '8px 0',
+            borderRadius: 10,
+            border: 'none',
+            background: mode === 'MARKET' ? 'var(--primary)' : 'transparent',
+            color: mode === 'MARKET' ? '#fff' : 'var(--muted-foreground)',
+            fontSize: 12.5,
+            fontWeight: 700,
+            cursor: 'pointer',
+            display: 'flex',
+            alignItems: 'center',
+            justifyContent: 'center',
+            gap: 6,
+            transition: 'all 0.15s ease',
+          }}
+        >
+          <ArrowDownUp size={14} />
+          <span>{language === 'ko' ? '스왑 (SOR)' : 'Market Swap'}</span>
+        </button>
+
+        <button
+          onClick={() => setMode('LIMIT')}
+          style={{
+            flex: 1,
+            padding: '8px 0',
+            borderRadius: 10,
+            border: 'none',
+            background: mode === 'LIMIT' ? 'var(--primary)' : 'transparent',
+            color: mode === 'LIMIT' ? '#fff' : 'var(--muted-foreground)',
+            fontSize: 12.5,
+            fontWeight: 700,
+            cursor: 'pointer',
+            display: 'flex',
+            alignItems: 'center',
+            justifyContent: 'center',
+            gap: 6,
+            transition: 'all 0.15s ease',
+          }}
+        >
+          <Sliders size={14} />
+          <span>{language === 'ko' ? '지정가 (0.2s)' : 'Limit Order'}</span>
+        </button>
+
+        <button
+          onClick={() => setMode('DCA')}
+          style={{
+            flex: 1,
+            padding: '8px 0',
+            borderRadius: 10,
+            border: 'none',
+            background: mode === 'DCA' ? 'var(--primary)' : 'transparent',
+            color: mode === 'DCA' ? '#fff' : 'var(--muted-foreground)',
+            fontSize: 12.5,
+            fontWeight: 700,
+            cursor: 'pointer',
+            display: 'flex',
+            alignItems: 'center',
+            justifyContent: 'center',
+            gap: 6,
+            transition: 'all 0.15s ease',
+          }}
+        >
+          <Clock size={14} />
+          <span>{language === 'ko' ? 'DCA 적립' : 'DCA Stream'}</span>
+        </button>
+      </div>
+
+      {/* Main Trading Card */}
       <div
         style={{
           background: 'var(--card)',
@@ -369,24 +552,14 @@ export default function GiwaSwap({ provider, address, onNavigateToDocs, onNaviga
           position: 'relative',
         }}
       >
-        {/* Swap Header */}
+        {/* Header */}
         <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', marginBottom: 16 }}>
           <div style={{ display: 'flex', alignItems: 'center', gap: 8 }}>
             <h2 style={{ fontSize: 18, fontWeight: 800, color: 'var(--foreground)', margin: 0 }}>
-              {language === 'ko' ? '토큰 스왑' : 'Swap'}
+              {mode === 'MARKET' ? (language === 'ko' ? '토큰 스왑 (SOR)' : 'Smart Swap') :
+               mode === 'LIMIT' ? (language === 'ko' ? '플래시블록 지정가 주문' : 'Flashblocks Limit Order') :
+               (language === 'ko' ? 'DCA 적립식 자동 투자' : 'Automated DCA Stream')}
             </h2>
-            <span
-              style={{
-                fontSize: 10,
-                fontWeight: 700,
-                padding: '3px 8px',
-                borderRadius: 6,
-                background: 'oklch(0.6724 0.1308 38.7559 / 0.12)',
-                color: 'var(--primary)',
-              }}
-            >
-              TESTNET ONLY
-            </span>
           </div>
 
           <div style={{ display: 'flex', alignItems: 'center', gap: 8 }}>
@@ -424,7 +597,7 @@ export default function GiwaSwap({ provider, address, onNavigateToDocs, onNaviga
           </div>
         </div>
 
-        {/* Slippage Settings Drawer */}
+        {/* Slippage Drawer */}
         {showSettings && (
           <div
             style={{
@@ -444,8 +617,7 @@ export default function GiwaSwap({ provider, address, onNavigateToDocs, onNaviga
                   key={val}
                   onClick={() => setSlippage(val)}
                   style={{
-                    flex: 1,
-                    padding: '6px 0',
+                    padding: '6px 14px',
                     borderRadius: 8,
                     border: slippage === val ? '1px solid var(--primary)' : '1px solid var(--border)',
                     background: slippage === val ? 'var(--primary)' : 'var(--card)',
@@ -555,7 +727,7 @@ export default function GiwaSwap({ provider, address, onNavigateToDocs, onNaviga
           }}
         >
           <div style={{ display: 'flex', justifyContent: 'space-between', marginBottom: 8 }}>
-            <span style={{ fontSize: 12, fontWeight: 600, color: 'var(--muted-foreground)' }}>{t.youReceive}</span>
+            <span style={{ fontSize: 12, fontWeight: 600, color: 'var(--muted-foreground)' }}>{language === 'ko' ? '예시 추정값 (실시간 아님)' : 'Illustrative estimate (not a live quote)'}</span>
             <span style={{ fontSize: 12, color: 'var(--muted-foreground)' }}>
               {t.balance}: <strong style={{ color: 'var(--foreground)' }}>{toBalance}</strong>
             </span>
@@ -603,6 +775,128 @@ export default function GiwaSwap({ provider, address, onNavigateToDocs, onNaviga
           </div>
         </div>
 
+        {/* Limit Order Target Price Input & Expiry */}
+        {mode === 'LIMIT' && (
+          <div style={{ padding: 14, borderRadius: 14, background: 'var(--muted)', marginBottom: 16, border: '1px solid var(--border)', display: 'flex', flexDirection: 'column', gap: 10 }}>
+            <div>
+              <div style={{ display: 'flex', justifyContent: 'space-between', fontSize: 12, fontWeight: 600, color: 'var(--muted-foreground)', marginBottom: 6 }}>
+                <span>{language === 'ko' ? '목표 체결 가격 (USD)' : 'Target Execution Price (USD)'}</span>
+                <span style={{ color: 'var(--primary)' }}>Flashblocks 200ms Trigger</span>
+              </div>
+              <input
+                type="number"
+                value={limitTargetPrice}
+                onChange={(e) => setLimitTargetPrice(e.target.value)}
+                placeholder="0.00"
+                style={{ width: '100%', background: 'none', border: 'none', fontSize: 20, fontWeight: 800, color: 'var(--foreground)', outline: 'none' }}
+              />
+            </div>
+            <div>
+              <div style={{ fontSize: 11, fontWeight: 600, color: 'var(--muted-foreground)', marginBottom: 6 }}>
+                {language === 'ko' ? '주문 유효 기간' : 'Order Expiry Duration'}
+              </div>
+              <div style={{ display: 'flex', gap: 6 }}>
+                {[1, 7, 30].map((days) => (
+                  <button
+                    key={days}
+                    onClick={() => setLimitDurationDays(days)}
+                    style={{
+                      flex: 1,
+                      padding: '4px 0',
+                      borderRadius: 8,
+                      border: limitDurationDays === days ? '1px solid var(--primary)' : '1px solid var(--border)',
+                      background: limitDurationDays === days ? 'var(--primary)' : 'var(--card)',
+                      color: limitDurationDays === days ? '#fff' : 'var(--foreground)',
+                      fontSize: 11,
+                      fontWeight: 700,
+                      cursor: 'pointer',
+                    }}
+                  >
+                    {days} {days === 1 ? (language === 'ko' ? '일' : 'Day') : (language === 'ko' ? '일' : 'Days')}
+                  </button>
+                ))}
+              </div>
+            </div>
+          </div>
+        )}
+
+        {/* DCA Interval Settings */}
+        {mode === 'DCA' && (
+          <div style={{ padding: 14, borderRadius: 14, background: 'var(--muted)', marginBottom: 16, border: '1px solid var(--border)', display: 'flex', flexDirection: 'column', gap: 10 }}>
+            <div>
+              <div style={{ fontSize: 12, fontWeight: 700, color: 'var(--foreground)', marginBottom: 6 }}>
+                {language === 'ko' ? '적립 주기 (Interval)' : 'DCA Frequency'}
+              </div>
+              <div style={{ display: 'flex', gap: 6 }}>
+                {(['HOURLY', 'DAILY', 'WEEKLY'] as const).map((freq) => (
+                  <button
+                    key={freq}
+                    onClick={() => setDcaFrequency(freq)}
+                    style={{
+                      flex: 1,
+                      padding: '6px 0',
+                      borderRadius: 8,
+                      border: dcaFrequency === freq ? '1px solid var(--primary)' : '1px solid var(--border)',
+                      background: dcaFrequency === freq ? 'var(--primary)' : 'var(--card)',
+                      color: dcaFrequency === freq ? '#fff' : 'var(--foreground)',
+                      fontSize: 11,
+                      fontWeight: 700,
+                      cursor: 'pointer',
+                    }}
+                  >
+                    {freq}
+                  </button>
+                ))}
+              </div>
+            </div>
+
+            <div>
+              <div style={{ fontSize: 11, fontWeight: 600, color: 'var(--muted-foreground)', marginBottom: 6 }}>
+                {language === 'ko' ? '총 분할 횟수' : 'Total Orders Count'}
+              </div>
+              <div style={{ display: 'flex', gap: 6 }}>
+                {[5, 10, 20, 50].map((count) => (
+                  <button
+                    key={count}
+                    onClick={() => setDcaTotalOrders(count)}
+                    style={{
+                      flex: 1,
+                      padding: '4px 0',
+                      borderRadius: 8,
+                      border: dcaTotalOrders === count ? '1px solid var(--primary)' : '1px solid var(--border)',
+                      background: dcaTotalOrders === count ? 'var(--primary)' : 'var(--card)',
+                      color: dcaTotalOrders === count ? '#fff' : 'var(--foreground)',
+                      fontSize: 11,
+                      fontWeight: 700,
+                      cursor: 'pointer',
+                    }}
+                  >
+                    {count}x
+                  </button>
+                ))}
+              </div>
+            </div>
+          </div>
+        )}
+
+        {/* Permit2 Gasless Toggle */}
+        {!fromToken.isNative && mode === 'MARKET' && (
+          <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', padding: '10px 14px', borderRadius: 12, background: 'var(--muted)', border: '1px solid var(--border)', marginBottom: 16 }}>
+            <label style={{ display: 'flex', alignItems: 'center', gap: 8, fontSize: 12, fontWeight: 600, color: 'var(--foreground)', cursor: 'pointer' }}>
+              <input
+                type="checkbox"
+                checked={usePermit2}
+                onChange={(e) => setUsePermit2(e.target.checked)}
+                style={{ accentColor: 'var(--primary)', width: 15, height: 15 }}
+              />
+              <span>⚡ Permit2 Gasless Approval (1-Signature)</span>
+            </label>
+            <span style={{ fontSize: 10, padding: '2px 6px', borderRadius: 4, background: 'rgba(34, 197, 94, 0.15)', color: '#22c55e', fontWeight: 700 }}>
+              ZERO GAS
+            </span>
+          </div>
+        )}
+
         {/* Route Details */}
         <div
           style={{
@@ -618,24 +912,76 @@ export default function GiwaSwap({ provider, address, onNavigateToDocs, onNaviga
           }}
         >
           <div style={{ display: 'flex', justifyContent: 'space-between', color: 'var(--muted-foreground)' }}>
-            <span>{language === 'ko' ? '거래 경로' : 'Trade Route'}</span>
-            <span style={{ fontWeight: 600, color: 'var(--foreground)' }}>
-              {fromToken.symbol} ➔ Giwa DEX ➔ {toToken.symbol}
+            <span>{language === 'ko' ? 'Smart Order Route (SOR)' : 'Smart Order Route'}</span>
+            <span style={{ fontWeight: 700, color: 'var(--foreground)' }}>
+              {smartRoute.routeLabel}
             </span>
           </div>
+
           <div style={{ display: 'flex', justifyContent: 'space-between', color: 'var(--muted-foreground)' }}>
-            <span>{language === 'ko' ? '예상 가스비' : 'Network Fee'}</span>
-            <span style={{ fontWeight: 600, color: '#22c55e' }}>&lt; $0.0001 (Giwa L2)</span>
+            <span>{language === 'ko' ? '예상 가격 영향' : 'Price Impact'}</span>
+            <span style={{ fontWeight: 600, color: smartRoute.priceImpactPercent > 1 ? '#ef4444' : '#22c55e' }}>
+              {language === 'ko' ? '실시간 견적 필요' : 'Live quote required'}
+            </span>
           </div>
+
           <div style={{ display: 'flex', justifyContent: 'space-between', color: 'var(--muted-foreground)' }}>
-            <span>{language === 'ko' ? '블록 확정 속도' : 'Block Finality'}</span>
+            <span>{language === 'ko' ? '사전 확인' : 'Preconfirmation'}</span>
             <span style={{ fontWeight: 600, color: 'var(--primary)' }}>⚡ 0.2s Flashblocks</span>
+          </div>
+
+          <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', paddingTop: 4, borderTop: '1px solid var(--border)' }}>
+            <span style={{ display: 'flex', alignItems: 'center', gap: 4, color: 'var(--muted-foreground)' }}>
+              <ShieldCheck size={13} color="var(--primary)" />
+              {language === 'ko' ? 'Dojang 수수료 할인' : 'Dojang Fee Rebate'}
+            </span>
+            {dojangProfile.feeDiscountPercent > 0 ? (
+              <span
+                onClick={() => setShowDojangModal(true)}
+                style={{
+                  fontWeight: 700,
+                  fontSize: 11,
+                  padding: '2px 8px',
+                  borderRadius: 999,
+                  background: dojangProfile.isVIPTrader ? 'rgba(245, 158, 11, 0.15)' : 'rgba(59, 130, 246, 0.15)',
+                  color: dojangProfile.isVIPTrader ? '#f59e0b' : '#3b82f6',
+                  border: `1px solid ${dojangProfile.isVIPTrader ? 'rgba(245, 158, 11, 0.3)' : 'rgba(59, 130, 246, 0.3)'}`,
+                  cursor: 'pointer',
+                  display: 'flex',
+                  alignItems: 'center',
+                  gap: 4,
+                }}
+              >
+                {dojangProfile.isVIPTrader ? <Award size={12} /> : <ShieldCheck size={12} />}
+                -{dojangProfile.feeDiscountPercent}% ({dojangProfile.activeTier === 'DUNAMU_VIP' ? 'VIP' : 'KYC'})
+              </span>
+            ) : (
+              <button
+                onClick={() => setShowDojangModal(true)}
+                style={{
+                  background: 'none',
+                  border: 'none',
+                  padding: 0,
+                  color: 'var(--primary)',
+                  fontSize: 11,
+                  fontWeight: 700,
+                  cursor: 'pointer',
+                  textDecoration: 'underline',
+                }}
+              >
+                {language === 'ko' ? '도장 인증 시 최대 50% 할인 ➔' : 'Verify on Dojang for -50% ➔'}
+              </button>
+            )}
           </div>
         </div>
 
         {/* Action Button */}
         <button
-          onClick={executeSwap}
+          onClick={
+            mode === 'MARKET' ? executeMarketSwap :
+            mode === 'LIMIT' ? handleCreateLimitOrder :
+            handleCreateDCA
+          }
           disabled={isSwapping}
           style={{
             width: '100%',
@@ -653,7 +999,11 @@ export default function GiwaSwap({ provider, address, onNavigateToDocs, onNaviga
         >
           {isSwapping
             ? (language === 'ko' ? '스왑 처리 중...' : 'Swapping...')
-            : (language === 'ko' ? `${fromToken.symbol}을(를) ${toToken.symbol}(으)로 스왑` : `Swap ${fromToken.symbol} to ${toToken.symbol}`)}
+            : mode === 'MARKET'
+            ? (language === 'ko' ? `${fromToken.symbol} ➔ ${toToken.symbol} 스왑 (SOR)` : `Swap ${fromToken.symbol} to ${toToken.symbol}`)
+            : mode === 'LIMIT'
+            ? (language === 'ko' ? `0.2초 지정가 주문 제출` : `Place Limit Order`)
+            : (language === 'ko' ? `DCA 자동 적립 스트림 생성` : `Create DCA Stream`)}
         </button>
 
         {/* Tx Receipt */}
@@ -672,7 +1022,7 @@ export default function GiwaSwap({ provider, address, onNavigateToDocs, onNaviga
           >
             <div style={{ display: 'flex', alignItems: 'center', gap: 8, fontSize: 12, color: '#22c55e', fontWeight: 600 }}>
               <CheckCircle2 size={16} />
-              <span>{language === 'ko' ? '스왑 확정 완료' : 'Swap Confirmed'}</span>
+              <span>{language === 'ko' ? '스왑 확정 완료 (200ms)' : 'Swap Confirmed (200ms Flashblocks)'}</span>
             </div>
             <a
               href={`https://sepolia-explorer.giwa.io/tx/${txHash}`}
@@ -694,84 +1044,135 @@ export default function GiwaSwap({ provider, address, onNavigateToDocs, onNaviga
         )}
       </div>
 
-      {/* Helpful Developer & Token Creator Links */}
-      <div style={{ display: 'grid', gridTemplateColumns: isMobile ? '1fr' : '1fr 1fr', gap: 12 }}>
-        <button
-          onClick={onNavigateToDeployer}
-          style={{
-            padding: 16,
-            borderRadius: 16,
-            background: 'var(--card)',
-            border: '1px solid var(--border)',
-            display: 'flex',
-            alignItems: 'center',
-            gap: 12,
-            cursor: 'pointer',
-            textAlign: 'left',
-          }}
-        >
-          <div
-            style={{
-              width: 36,
-              height: 36,
-              borderRadius: 10,
-              background: 'oklch(0.6724 0.1308 38.7559 / 0.12)',
-              display: 'flex',
-              alignItems: 'center',
-              justifyContent: 'center',
-              color: 'var(--primary)',
-            }}
-          >
-            <Sparkles size={18} />
+      {/* Open Limit Orders List */}
+      {mode === 'LIMIT' && openLimitOrders.length > 0 && (
+        <div style={{ background: 'var(--card)', border: '1px solid var(--border)', borderRadius: 20, padding: 18 }}>
+          <div style={{ fontSize: 14, fontWeight: 800, color: 'var(--foreground)', marginBottom: 12, display: 'flex', justifyContent: 'space-between' }}>
+            <span>{language === 'ko' ? '나의 활성 지정가 주문' : 'My Active Limit Orders'}</span>
+            <span style={{ fontSize: 12, color: 'var(--primary)' }}>{openLimitOrders.filter(o => o.status === 'OPEN').length} Open</span>
           </div>
-          <div>
-            <div style={{ fontSize: 13, fontWeight: 700, color: 'var(--foreground)' }}>
-              {language === 'ko' ? 'Giwa 토큰 발행기' : 'Create Giwa Token'}
-            </div>
-            <div style={{ fontSize: 11, color: 'var(--muted-foreground)' }}>
-              {language === 'ko' ? '1클릭으로 나만의 토큰 발행' : '1-Click ERC-20 deployer'}
-            </div>
-          </div>
-        </button>
 
-        <button
-          onClick={onNavigateToDocs}
-          style={{
-            padding: 16,
-            borderRadius: 16,
-            background: 'var(--card)',
-            border: '1px solid var(--border)',
-            display: 'flex',
-            alignItems: 'center',
-            gap: 12,
-            cursor: 'pointer',
-            textAlign: 'left',
-          }}
-        >
-          <div
-            style={{
-              width: 36,
-              height: 36,
-              borderRadius: 10,
-              background: 'oklch(0.6724 0.1308 38.7559 / 0.12)',
-              display: 'flex',
-              alignItems: 'center',
-              justifyContent: 'center',
-              color: 'var(--primary)',
-            }}
-          >
-            <TrendingUp size={18} />
+          <div style={{ display: 'flex', flexDirection: 'column', gap: 8 }}>
+            {openLimitOrders.map((ord) => (
+              <div key={ord.id} style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', padding: '10px 14px', borderRadius: 12, background: 'var(--muted)', border: '1px solid var(--border)' }}>
+                <div>
+                  <div style={{ fontSize: 13, fontWeight: 700, color: 'var(--foreground)' }}>
+                    {ord.amountIn} {ord.tokenInSymbol} ➔ {ord.tokenOutSymbol}
+                  </div>
+                  <div style={{ fontSize: 11, color: 'var(--muted-foreground)' }}>
+                    Target: ${ord.targetPriceUSD.toLocaleString()} · Status: <span style={{ color: ord.status === 'OPEN' ? '#3b82f6' : '#22c55e', fontWeight: 700 }}>{ord.status}</span>
+                  </div>
+                </div>
+
+                {ord.status === 'OPEN' && (
+                  <div style={{ display: 'flex', gap: 6 }}>
+                    <button
+                      onClick={() => fillDEXLimitOrder(ord.id)}
+                      title="Simulate Flashblocks Keeper Fill"
+                      style={{ padding: '4px 8px', borderRadius: 6, border: 'none', background: 'var(--primary)', color: '#fff', fontSize: 11, fontWeight: 700, cursor: 'pointer' }}
+                    >
+                      Fill
+                    </button>
+                    <button
+                      onClick={() => cancelDEXLimitOrder(ord.id)}
+                      title="Cancel Order"
+                      style={{ padding: '4px 8px', borderRadius: 6, border: '1px solid var(--border)', background: 'var(--card)', color: '#ef4444', fontSize: 11, fontWeight: 700, cursor: 'pointer' }}
+                    >
+                      Cancel
+                    </button>
+                  </div>
+                )}
+              </div>
+            ))}
           </div>
-          <div>
-            <div style={{ fontSize: 13, fontWeight: 700, color: 'var(--foreground)' }}>
-              {language === 'ko' ? 'Giwa 개발자 가이드' : 'Giwa Developer Guide'}
-            </div>
-            <div style={{ fontSize: 11, color: 'var(--muted-foreground)' }}>
-              {language === 'ko' ? 'RPC, 수도꼭지, 스마트 컨트랙트' : 'RPC, faucet, and contracts'}
-            </div>
+        </div>
+      )}
+
+      {/* Active DCA Streams List */}
+      {mode === 'DCA' && activeDCAStreams.length > 0 && (
+        <div style={{ background: 'var(--card)', border: '1px solid var(--border)', borderRadius: 20, padding: 18 }}>
+          <div style={{ fontSize: 14, fontWeight: 800, color: 'var(--foreground)', marginBottom: 12, display: 'flex', justifyContent: 'space-between' }}>
+            <span>{language === 'ko' ? '나의 활성 DCA 스트림' : 'My Active DCA Streams'}</span>
+            <span style={{ fontSize: 12, color: 'var(--primary)' }}>{activeDCAStreams.filter(s => s.status === 'ACTIVE').length} Active</span>
           </div>
-        </button>
-      </div>
+
+          <div style={{ display: 'flex', flexDirection: 'column', gap: 8 }}>
+            {activeDCAStreams.map((stm) => (
+              <div key={stm.id} style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', padding: '10px 14px', borderRadius: 12, background: 'var(--muted)', border: '1px solid var(--border)' }}>
+                <div>
+                  <div style={{ fontSize: 13, fontWeight: 700, color: 'var(--foreground)' }}>
+                    {stm.amountPerInterval} {stm.tokenInSymbol} / {stm.frequency.toLowerCase()} ➔ {stm.tokenOutSymbol}
+                  </div>
+                  <div style={{ fontSize: 11, color: 'var(--muted-foreground)' }}>
+                    Progress: {stm.intervalsCompleted} / {stm.totalIntervals} Orders Completed
+                  </div>
+                </div>
+
+                {stm.status === 'ACTIVE' && (
+                  <div style={{ display: 'flex', gap: 6 }}>
+                    <button
+                      onClick={() => executeNextDCAInterval(stm.id)}
+                      title="Trigger Next Interval"
+                      style={{ padding: '4px 8px', borderRadius: 6, border: 'none', background: 'var(--primary)', color: '#fff', fontSize: 11, fontWeight: 700, cursor: 'pointer' }}
+                    >
+                      Trigger
+                    </button>
+                    <button
+                      onClick={() => cancelDEXDCAStream(stm.id)}
+                      title="Cancel Stream"
+                      style={{ padding: '4px 8px', borderRadius: 6, border: '1px solid var(--border)', background: 'var(--card)', color: '#ef4444', fontSize: 11, fontWeight: 700, cursor: 'pointer' }}
+                    >
+                      Cancel
+                    </button>
+                  </div>
+                )}
+              </div>
+            ))}
+          </div>
+        </div>
+      )}
+
+      {/* Footer Navigation Shortcuts */}
+      {(onNavigateToDocs || onNavigateToDeployer) && (
+        <div style={{ display: 'flex', justifyContent: 'center', gap: 16, marginTop: 12 }}>
+          {onNavigateToDeployer && (
+            <button
+              onClick={onNavigateToDeployer}
+              style={{
+                background: 'none',
+                border: 'none',
+                color: 'var(--muted-foreground)',
+                fontSize: 12,
+                cursor: 'pointer',
+                display: 'flex',
+                alignItems: 'center',
+                gap: 4,
+                textDecoration: 'underline',
+              }}
+            >
+              <span>🚀 {language === 'ko' ? '토큰 생성기' : 'Token Deployer'}</span>
+            </button>
+          )}
+          {onNavigateToDocs && (
+            <button
+              onClick={onNavigateToDocs}
+              style={{
+                background: 'none',
+                border: 'none',
+                color: 'var(--muted-foreground)',
+                fontSize: 12,
+                cursor: 'pointer',
+                display: 'flex',
+                alignItems: 'center',
+                gap: 4,
+                textDecoration: 'underline',
+              }}
+            >
+              <span>📖 {language === 'ko' ? 'DEX 개발자 문서' : 'Developer Docs'}</span>
+            </button>
+          )}
+        </div>
+      )}
 
       {/* Select Token Modals */}
       {(showFromModal || showToModal) && (
@@ -850,21 +1251,39 @@ export default function GiwaSwap({ provider, address, onNavigateToDocs, onNaviga
                   <div style={{ display: 'flex', alignItems: 'center', gap: 10 }}>
                     <span style={{ fontSize: 20 }}>{tk.icon}</span>
                     <div>
-                      <div style={{ fontSize: 14, fontWeight: 700, color: 'var(--foreground)' }}>{tk.symbol}</div>
+                      <div style={{ fontSize: 14, fontWeight: 700, color: 'var(--foreground)', display: 'flex', alignItems: 'center', gap: 4 }}>
+                        {tk.symbol}
+                        {isTokenDojangVerified(tk.address) && (
+                          <span title="Dunamu / Dojang Verified Asset">
+                            <ShieldCheck size={14} color="#3b82f6" />
+                          </span>
+                        )}
+                      </div>
                       <div style={{ fontSize: 11, color: 'var(--muted-foreground)' }}>{tk.name}</div>
                     </div>
                   </div>
-                  {tk.isNative && (
+                  {tk.isNative ? (
                     <span style={{ fontSize: 10, padding: '2px 6px', borderRadius: 4, background: 'var(--primary)', color: '#fff', fontWeight: 700 }}>
                       NATIVE
                     </span>
-                  )}
+                  ) : isTokenDojangVerified(tk.address) ? (
+                    <span style={{ fontSize: 10, padding: '2px 6px', borderRadius: 4, background: 'rgba(59, 130, 246, 0.15)', color: '#3b82f6', border: '1px solid rgba(59, 130, 246, 0.3)', fontWeight: 700 }}>
+                      DOJANG
+                    </span>
+                  ) : null}
                 </button>
               ))}
             </div>
           </div>
         </div>
       )}
+
+      {/* Dojang Identity Modal */}
+      <DojangIdentityModal
+        isOpen={showDojangModal}
+        onClose={() => setShowDojangModal(false)}
+        address={address as Address | undefined}
+      />
     </div>
   );
 }

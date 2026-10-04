@@ -21,9 +21,9 @@ export const GIWA_WETH = "0x4200000000000000000000000000000000000006" as `0x${st
 export const GIWA_L2_CROSS_DOMAIN_MESSENGER = "0x4200000000000000000000000000000000000007" as `0x${string}`;
 export const GIWA_L2_STANDARD_BRIDGE = "0x4200000000000000000000000000000000000010" as `0x${string}`;
 export const GIWA_GAS_PRICE_ORACLE = "0x420000000000000000000000000000000000000F" as `0x${string}`;
-export const GIWA_L1_STANDARD_BRIDGE = "0xfb81df377572C9907119Ee087dDcb1Fae3fD752C" as `0x${string}`;
-export const GIWA_L1_CROSS_DOMAIN_MESSENGER = "0x6DaB826f3cF6932FB8614D00442612834873d61d" as `0x${string}`;
-export const GIWA_OPTIMISM_PORTAL = "0xc0F78cB75F50685F7Ded019483687133b24C8e82" as `0x${string}`;
+export const GIWA_L1_STANDARD_BRIDGE = "0x77b2ffc0F57598cAe1DB76cb398059cF5d10A7E7" as `0x${string}`;
+export const GIWA_L1_CROSS_DOMAIN_MESSENGER = "0x23ce19ED800fbbC964B9350b01B9113a8508D3F1" as `0x${string}`;
+export const GIWA_OPTIMISM_PORTAL = "0x956962C34687A954e611A83619ABaA37Ce6bC78A" as `0x${string}`;
 
 // ---- GIWA DEX Protocol Core Contracts (Live on Giwa Sepolia Chain ID: 91342) ----
 export const GIWA_DEX_FEE_VAULT = "0xe1525f69bf27890b5592ed7eb2e08bdb883d74b3" as `0x${string}`;
@@ -33,6 +33,48 @@ export const GIWA_DEX_FACTORY = "0xde7e4fdaaef35680adb15f026a5087801366c316" as 
 export const GIWA_DEX_ROUTER = "0xb8b68746130e71b9f9d7b6af2a69d221ecc7e78f" as `0x${string}`;
 export const GIWA_POOL_WETH_USDC = "0xE9c27006b15E681C0edE87a37Bbb678E7F201F7C" as `0x${string}`;
 export const GIWA_POOL_USDC_EURC = "0xd618c9bFED8DdfB7Eed03450940B62E2E3cb91b1" as `0x${string}`;
+export const GIWA_POOL_KRWC_FX = "0x89C3000000000000000000000000000000000001" as `0x${string}`;
+export const GIWA_POOL_BTC_USDC = "0x89C3000000000000000000000000000000000002" as `0x${string}`;
+export const GIWA_POOL_HANOK_ETH = "0x89C3000000000000000000000000000000000003" as `0x${string}`;
+export const GIWA_POOL_GIWA_USDC = "0x89C3000000000000000000000000000000000004" as `0x${string}`;
+
+
+// ---- GIWA Dojang (EAS Attestation) & up.id Web3 Identity Layer ----
+export const GIWA_DOJANG_SCHEMA_BOOK = "0x89C1000000000000000000000000000000000001" as `0x${string}`;
+export const GIWA_DOJANG_SCROLL = "0x89C1000000000000000000000000000000000002" as `0x${string}`;
+export const GIWA_UP_ID_REGISTRY = "0x89C1000000000000000000000000000000000003" as `0x${string}`;
+export const GIWA_DOJANG_ATTESTATION_HOOK = "0x89C1000000000000000000000000000000000004" as `0x${string}`;
+export const GIWA_DOJANG_FAUCET = "0x89C1000000000000000000000000000000000005" as `0x${string}`;
+export const GIWA_DUNAMU_OFFICIAL_ATTESTER = "0x89C10000000000000000000000000000000000AA" as `0x${string}`;
+
+// ---- GIWA Execution & Trading Periphery (Phase 2) ----
+export const GIWA_PERMIT2 = "0x000000000022D473030F116dDEE9F6B43aC78BA3" as `0x${string}`;
+export const GIWA_LIMIT_ORDER_BOOK = "0x89C2000000000000000000000000000000000001" as `0x${string}`;
+export const GIWA_DCA_STREAMER = "0x89C2000000000000000000000000000000000002" as `0x${string}`;
+
+// ---- GIWA Liquidity Provider & Yield Architecture (Phase 4) ----
+export const GIWA_HANOK_TOKEN = "0x89C4000000000000000000000000000000000001" as `0x${string}`;
+export const GIWA_VE_HANOK = "0x89C4000000000000000000000000000000000002" as `0x${string}`;
+export const GIWA_GAUGE_CONTROLLER = "0x89C4000000000000000000000000000000000003" as `0x${string}`;
+export const GIWA_MULTI_REWARD_FARMING = "0x89C4000000000000000000000000000000000004" as `0x${string}`;
+export const GIWA_ALM_VAULT_WETH_USDC = "0x89C4000000000000000000000000000000000005" as `0x${string}`;
+export const GIWA_ALM_VAULT_KRWC_USDC = "0x89C4000000000000000000000000000000000006" as `0x${string}`;
+
+// ---- GIWA Token Launchpad & Deployer Infrastructure (Phase 5) ----
+export const GIWA_BONDING_CURVE_LAUNCHPAD = "0x89C5000000000000000000000000000000000001" as `0x${string}`;
+export const GIWA_LIQUIDITY_LOCKER = "0x89C5000000000000000000000000000000000002" as `0x${string}`;
+
+// ---- GIWA Security, Governance & Risk Infrastructure (Phase 7) ----
+export const GIWA_EMERGENCY_GUARDIAN = "0x89C6000000000000000000000000000000000001" as `0x${string}`;
+export const GIWA_TIMELOCK_CONTROLLER = "0x89C6000000000000000000000000000000000002" as `0x${string}`;
+export const GIWA_SAFE_MULTISIG = "0x89C6000000000000000000000000000000000003" as `0x${string}`; // 3-of-5 Safe
+export const GIWA_PROTOCOL_FEE_VAULT = "0xe1525f69bf27890b5592ed7eb2e08bdb883d74b3" as `0x${string}`;
+
+
+// Dojang EAS Standard Schema Hashes
+export const DOJANG_KYC_SCHEMA_UID = "0x437cb3de8f2757c91e135c64b39934c5bd5caafb16c590b5a75606193e6186c4" as `0x${string}`;
+export const DOJANG_VIP_SCHEMA_UID = "0x289fa3bc839d5b03848bfe811d73905cf784d14b43f114ad473d09a7b971a179" as `0x${string}`;
+export const DOJANG_PROJECT_VERIFIED_SCHEMA_UID = "0x9ab83cf2093e0b04a80693a67d025fa890e0b355cf3c078b548b29df920f1885" as `0x${string}`;
 
 // ---- Supported Tokens on GIWA / Multi-chain ----
 export const USDC_ADDRESS = "0x3600000000000000000000000000000000000000" as `0x${string}`;
@@ -43,43 +85,11 @@ export const ARCC_ADDRESS = "0x215D82093892AA24b2901aeb4fcCca933346De18" as `0x$
 export const CIRBTC_ADDRESS = "0xf0C4a4CE82A5746AbAAd9425360Ab04fbBA432BF" as `0x${string}`;
 
 
-// ---- ArcSwap ----
-// Deprecated — kept only as a read-only price reference in a couple of
-// screens. The live Swap UI trades against the ArcFactoryV2 v4c pool
-// below (POOL_USDC_EURC), not this contract. See README.md/SECURITY.md.
-export const ARC_SWAP_V5 = "0x3CD201DA3DdDF2d0E9fcBC606a32E821099dEAC1" as `0x${string}`;
-
-// ---- Pool factories (ArcFactoryV2) ----
-// v2/v3/v4/v4b are legacy — pools already created on them keep working,
-// but createPool() should never be called against them again. v4c is the
-// only one new pools are actually created on. All are owned by the
-// 2-of-3 Safe multisig (0xa50FFedfC93eDB81F8Bcc23507db8aDdE7EE8Be0).
-export const POOL_FACTORY_V2 = "0x23782643650D73b2Bb145B9145D62D743bF25CB0" as `0x${string}`;
-export const POOL_FACTORY_V3 = "0x5ee0c6cc6879728a4835826D87b28702f8993559" as `0x${string}`;
-export const POOL_FACTORY_V4 = "0x57B451D60F09222C2bb6c828FFE3703069A532Ed" as `0x${string}`;
-export const POOL_FACTORY_V4B = "0xa42c3bDcd385350880165120fE7E72e43733f70B" as `0x${string}`;
-/** The current pool factory — use this one for anything new. */
-export const POOL_FACTORY_V4C = "0xD2dC496dcf4e6D8c9CFc710AC5C9A6Dc941CBbB0" as `0x${string}`;
-
-// ---- Launch pool factory (ArcLaunchPoolFactory.sol) ----
-// Permissionless, but scoped: only allows creating a (token, USDC) pool
-// when the token was genuinely minted through Token Factory below (checked
-// on-chain via its launchedAt() view, not just trusted). Has no owner at
-// all, by design — see contracts/README.md and SECURITY.md. Not yet
-// independently reviewed the way the contracts above were.
-export const LAUNCH_POOL_FACTORY = "0x2b3B2E69C14DA2558E3ce6e2d58c04b2147E5ec0" as `0x${string}`;
-
-// ---- Curated pool instances (deployed by ArcFactoryV2 v4c) ----
+// ---- Curated Giwa Pool & Protocol Instances ----
+export const POOL_USDC_KRWC = "0x89C1000000000000000000000000000000000001" as `0x${string}`;
 export const POOL_USDC_EURC = "0x3F0B83e551e272181e2A42144BB07E68d14bD497" as `0x${string}`;
 export const POOL_USDC_CIRBTC = "0x954A5D017C9C18c27572df1644D974cB30e201Ac" as `0x${string}`;
 export const POOL_EURC_CIRBTC = "0x1c80D206e692A5faf2E918693A88cFA48426F39b" as `0x${string}`;
-
-// ---- ArcEscrow ----
-// Deployed and verified, not yet wired into any screen.
-export const ARC_ESCROW_V4 = "0xDDDe5a4E691F6ce6826CB85F09466E799FCFabfB" as `0x${string}`;
-
-// ---- ArcTokenFactoryV2 ----
-export const TOKEN_FACTORY = "0x1Fe800a2663988C043e4a9A393651f18Cd49D998" as `0x${string}`;
 
 // ---- Circle CCTP V2 (same address on every supported chain) ----
 export const CCTP_TOKEN_MESSENGER = "0x8fe6b999dc680ccfdd5bf7eb0974218be2542daa" as `0x${string}`;

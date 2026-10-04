@@ -35,11 +35,9 @@ async function main() {
   console.log(`   Standard RPC (Block #${blockStd}): ${latStd}ms`);
 
   const t1 = performance.now();
-  let blockFlash = 0n;
-  let latFlash = 0;
   try {
-    blockFlash = await flashblocksClient.getBlockNumber();
-    latFlash = Math.round(performance.now() - t1);
+    const blockFlash = await flashblocksClient.getBlockNumber();
+    const latFlash = Math.round(performance.now() - t1);
     console.log(`   Flashblocks RPC (Block #${blockFlash}): ${latFlash}ms (<200ms target)`);
   } catch (e) {
     console.log(`   Flashblocks RPC: (Unavailable / Standard fallback active)`);

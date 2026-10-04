@@ -1,5 +1,6 @@
 import { useState, useEffect } from "react";
 import { calculateKimchiPremium, formatKrw, type KimchiPremiumData } from "../lib/upbitKimchi";
+import { KimchiArbitrageModal } from "./KimchiArbitrageModal";
 
 interface Coin {
   id: string;
@@ -20,6 +21,7 @@ const SYMBOL_MAP: Record<string, string> = {
 export default function MarketTicker() {
   const [coins, setCoins] = useState<Coin[]>([]);
   const [kimchi, setKimchi] = useState<KimchiPremiumData | null>(null);
+  const [showArbitrageModal, setShowArbitrageModal] = useState(false);
 
   useEffect(() => {
     let cancelled = false;
@@ -81,36 +83,49 @@ export default function MarketTicker() {
     >
       {/* Upbit Kimchi Premium Live Badge */}
       {kimchi && (
-        <div
-          style={{
-            display: "flex",
-            alignItems: "center",
-            gap: 8,
-            padding: "0 14px",
-            borderRight: "1px solid var(--border)",
-            background: "oklch(0.6724 0.1308 38.7559 / 0.12)",
-            height: "100%",
-            flexShrink: 0,
-            zIndex: 2,
-          }}
-        >
-          <span style={{ fontSize: 11, fontWeight: 800, color: "var(--primary)" }}>🇰🇷 UPBIT</span>
-          <span style={{ fontSize: 11.5, color: "var(--foreground)", fontWeight: 700 }}>
-            USD/KRW {formatKrw(kimchi.usdKrwRate)}
-          </span>
-          <span
+        <>
+          <div
+            onClick={() => setShowArbitrageModal(true)}
             style={{
-              fontSize: 11,
-              fontWeight: 800,
-              padding: "2px 6px",
-              borderRadius: 4,
-              background: kimchi.ethKimchiPremiumPct >= 0 ? "rgba(16, 185, 129, 0.15)" : "rgba(239, 68, 68, 0.15)",
-              color: kimchi.ethKimchiPremiumPct >= 0 ? "#10B981" : "#EF4444",
+              display: "flex",
+              alignItems: "center",
+              gap: 8,
+              padding: "0 14px",
+              borderRight: "1px solid var(--border)",
+              background: "oklch(0.6724 0.1308 38.7559 / 0.12)",
+              height: "100%",
+              flexShrink: 0,
+              zIndex: 2,
+              cursor: "pointer",
             }}
+            title="업비트 실시간 차익거래 레이더 열기 (Click to open Arbitrage Radar)"
           >
-            김프 {kimchi.ethKimchiPremiumPct >= 0 ? "+" : ""}{kimchi.ethKimchiPremiumPct.toFixed(2)}%
-          </span>
-        </div>
+            <span style={{ fontSize: 11, fontWeight: 800, color: "var(--primary)" }}>🇰🇷 UPBIT</span>
+            <span style={{ fontSize: 11.5, color: "var(--foreground)", fontWeight: 700 }}>
+              USD/KRW {formatKrw(kimchi.usdKrwRate)}
+            </span>
+            <span
+              style={{
+                fontSize: 11,
+                fontWeight: 800,
+                padding: "2px 6px",
+                borderRadius: 4,
+                background: kimchi.ethKimchiPremiumPct >= 0 ? "rgba(16, 185, 129, 0.15)" : "rgba(239, 68, 68, 0.15)",
+                color: kimchi.ethKimchiPremiumPct >= 0 ? "#10B981" : "#EF4444",
+              }}
+            >
+              김프 {kimchi.ethKimchiPremiumPct >= 0 ? "+" : ""}{kimchi.ethKimchiPremiumPct.toFixed(2)}%
+            </span>
+            <span style={{ fontSize: 10, color: "var(--primary)", fontWeight: 700 }}>
+              ⚡ ARB
+            </span>
+          </div>
+
+          <KimchiArbitrageModal
+            isOpen={showArbitrageModal}
+            onClose={() => setShowArbitrageModal(false)}
+          />
+        </>
       )}
 
       {/* Marquee Ticker */}

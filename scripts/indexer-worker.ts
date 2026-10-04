@@ -24,8 +24,8 @@ const client = createPublicClient({
 });
 
 // ABIs
-const PoolCreatedEvent = parseAbiItem(
-  'event PoolCreated(address indexed token0, address indexed token1, uint8 poolType, uint24 fee, int24 tickSpacing, address pool)'
+export const PoolCreatedEvent = parseAbiItem(
+  'event PoolCreated(address indexed token0, address indexed token1, uint24 indexed fee, int24 tickSpacing, bool isStable, address pool)'
 );
 
 const CLSwapEvent = parseAbiItem(
@@ -163,19 +163,19 @@ function saveState(state: IndexerState) {
   console.log(`[Indexer] Saved indexer state (${Object.keys(state.pools).length} pools, lastBlock: ${state.lastIndexedBlock}) to ${STATE_FILE_PATH}`);
 }
 
-async function fetchLogsInChunks<T>(params: {
+export async function fetchLogsInChunks<T>(params: {
   address: Address;
   event: any;
   fromBlock: bigint;
   toBlock: bigint;
-}): Promise<T[]> {
+}, readLogs: (args: any) => Promise<any[]> = args => client.getLogs(args)): Promise<T[]> {
   const allLogs: T[] = [];
   let currentFrom = params.fromBlock;
 
   while (currentFrom <= params.toBlock) {
     const currentTo = currentFrom + MAX_BLOCK_CHUNK - 1n < params.toBlock ? currentFrom + MAX_BLOCK_CHUNK - 1n : params.toBlock;
     try {
-      const chunkLogs = (await client.getLogs({
+      const chunkLogs = (await readLogs({
         address: params.address,
         event: params.event,
         fromBlock: currentFrom,
@@ -184,6 +184,7 @@ async function fetchLogsInChunks<T>(params: {
       allLogs.push(...chunkLogs);
     } catch (err) {
       console.error(`[Indexer] Chunk error for blocks ${currentFrom}->${currentTo}:`, err);
+      throw err; // Do not checkpoint beyond a failed chunk and permanently lose events.
     }
     currentFrom = currentTo + 1n;
   }
@@ -198,7 +199,7 @@ export async function runIndexer(options: { once?: boolean; fromBlock?: bigint }
   console.log(`🏭 Factory Address: ${GIWA_FACTORY_ADDRESS}`);
   console.log('====================================================');
 
-  let state = await loadState();
+  const state = await loadState();
   const currentBlock = await client.getBlockNumber();
   console.log(`[Indexer] Current on-chain block number: ${currentBlock}`);
 
@@ -219,7 +220,7 @@ export async function runIndexer(options: { once?: boolean; fromBlock?: bigint }
       console.log(`[Indexer] Discovered ${poolCreatedLogs.length} new PoolCreated events.`);
 
       for (const log of poolCreatedLogs) {
-        const { token0, token1, poolType, fee, tickSpacing, pool } = log.args;
+        const { token0, token1, isStable, fee, tickSpacing, pool } = log.args;
         if (!pool || !token0 || !token1) continue;
 
         const poolKey = pool.toLowerCase();
@@ -228,7 +229,7 @@ export async function runIndexer(options: { once?: boolean; fromBlock?: bigint }
             address: pool,
             token0,
             token1,
-            poolType: poolType === 0 ? 'CLAMM' : 'STABLE',
+            poolType: isStable ? 'STABLE' : 'CLAMM',
             feeTier: fee ?? 0,
             tickSpacing: tickSpacing ?? 0,
             createdAtBlock: log.blockNumber ?? 0n,
@@ -236,7 +237,7 @@ export async function runIndexer(options: { once?: boolean; fromBlock?: bigint }
             volumeToken0: '0',
             volumeToken1: '0',
           };
-          console.log(`  ➕ Registered Pool: ${pool} (${poolType === 0 ? 'CLAMM' : 'STABLE'}, Fee: ${fee})`);
+          console.log(`  ➕ Registered Pool: ${pool} (${isStable ? 'STABLE' : 'CLAMM'}, Fee: ${fee})`);
         }
       }
 
@@ -272,6 +273,7 @@ export async function runIndexer(options: { once?: boolean; fromBlock?: bigint }
       }
     } catch (error) {
       console.error('[Indexer] Error during log querying:', error);
+      throw error;
     }
   }
 

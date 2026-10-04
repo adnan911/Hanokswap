@@ -40,6 +40,12 @@ async function main() {
     chain: giwaSepolia,
     transport: http(GIWA_STANDARD_RPC),
   });
+  const USDC = (process.env.GIWA_USDC_ADDRESS || '0x3600000000000000000000000000000000000000') as Address;
+  const EURC = (process.env.GIWA_EURC_ADDRESS || '0x89B50855Aa3bE2F677cD6303Cec089B5F319D72a') as Address;
+  for (const token of [USDC, EURC]) {
+    const code = await publicClient.getBytecode({ address: token });
+    if (!code || code === '0x') throw new Error(`Token ${token} is not deployed. Configure GIWA_USDC_ADDRESS / GIWA_EURC_ADDRESS before deployment.`);
+  }
 
   const walletClient = createWalletClient({
     account,
@@ -134,7 +140,7 @@ async function main() {
   const routerHash = await walletClient.deployContract({
     abi: routerArtifact.abi,
     bytecode: routerArtifact.bytecode,
-    args: [factoryAddress, WETH9],
+    args: [factoryAddress, WETH9, '0x000000000022D473030F116dDEE9F6B43aC78BA3'],
   });
   console.log("   Tx Hash:", routerHash);
   const routerReceipt = await publicClient.waitForTransactionReceipt({ hash: routerHash });
@@ -142,8 +148,6 @@ async function main() {
   console.log("   ✅ GiwaUniversalRouter deployed at:", routerAddress);
 
   // 7. Initialize Genesis Pools
-  const USDC = "0x3600000000000000000000000000000000000000" as Address;
-  const EURC = "0x89B50855Aa3bE2F677cD6303Cec089B5F319D72a" as Address;
 
   console.log("\n7. 🏊 Initializing Genesis Liquidity Pools...");
   console.log("   a) WETH / USDC Volatile Pair (0.30% fee CLAMM)...");

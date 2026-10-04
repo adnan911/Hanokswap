@@ -1,0 +1,137 @@
+# Envio HyperIndex & Goldsky GraphQL Schema for Hanokswap DEX on Dunamu Giwa Chain (Chain ID: 91342)
+
+type Factory @entity {
+  id: ID!
+  poolCount: BigInt!
+  totalVolumeUSD: BigDecimal!
+  totalVolumeKRW: BigDecimal!
+  totalFeesUSD: BigDecimal!
+  totalValueLockedUSD: BigDecimal!
+  totalValueLockedKRW: BigDecimal!
+  txCount: BigInt!
+}
+
+type Token @entity {
+  id: ID! # Token Address
+  symbol: String!
+  name: String!
+  decimals: BigInt!
+  totalSupply: BigInt!
+  tradeVolumeUSD: BigDecimal!
+  totalValueLockedUSD: BigDecimal!
+  txCount: BigInt!
+  isDojangVerified: Boolean!
+}
+
+type Pool @entity {
+  id: ID! # Pool Address
+  token0: Token!
+  token1: Token!
+  feeTier: BigInt!
+  liquidity: BigInt!
+  sqrtPriceX96: BigInt!
+  tick: BigInt!
+  totalValueLockedUSD: BigDecimal!
+  totalValueLockedKRW: BigDecimal!
+  volumeUSD: BigDecimal!
+  volume24hUSD: BigDecimal!
+  feesUSD: BigDecimal!
+  isStableswap: Boolean!
+  isDojangGated: Boolean!
+  txCount: BigInt!
+  createdAtTimestamp: BigInt!
+  createdAtBlockNumber: BigInt!
+}
+
+type Swap @entity {
+  id: ID! # Transaction hash + logIndex
+  transactionHash: Bytes!
+  timestamp: BigInt!
+  blockNumber: BigInt!
+  flashblockIndex: Int # 0.2s Flashblock sequence ID
+  pool: Pool!
+  sender: Bytes!
+  recipient: Bytes!
+  recipientUpId: String
+  amount0: BigDecimal!
+  amount1: BigDecimal!
+  amountUSD: BigDecimal!
+  amountKRW: BigDecimal!
+  sqrtPriceX96: BigInt!
+  tick: BigInt!
+  logIndex: BigInt!
+}
+
+type Mint @entity {
+  id: ID!
+  transactionHash: Bytes!
+  timestamp: BigInt!
+  blockNumber: BigInt!
+  pool: Pool!
+  owner: Bytes!
+  sender: Bytes!
+  tickLower: BigInt!
+  tickUpper: BigInt!
+  amount: BigInt!
+  amount0: BigDecimal!
+  amount1: BigDecimal!
+  amountUSD: BigDecimal!
+}
+
+type Burn @entity {
+  id: ID!
+  transactionHash: Bytes!
+  timestamp: BigInt!
+  blockNumber: BigInt!
+  pool: Pool!
+  owner: Bytes!
+  tickLower: BigInt!
+  tickUpper: BigInt!
+  amount: BigInt!
+  amount0: BigDecimal!
+  amount1: BigDecimal!
+  amountUSD: BigDecimal!
+}
+
+type Collect @entity {
+  id: ID!
+  transactionHash: Bytes!
+  timestamp: BigInt!
+  pool: Pool!
+  owner: Bytes!
+  amount0: BigDecimal!
+  amount1: BigDecimal!
+  amountUSD: BigDecimal!
+}
+
+type GaugeVote @entity {
+  id: ID!
+  voter: Bytes!
+  voterUpId: String
+  pool: Pool!
+  weightBps: BigInt!
+  votingPower: BigDecimal!
+  epoch: BigInt!
+  timestamp: BigInt!
+}
+
+type BondingCurveToken @entity {
+  id: ID!
+  creator: Bytes!
+  name: String!
+  symbol: String!
+  ethRaised: BigDecimal!
+  graduationTargetETH: BigDecimal!
+  isGraduated: Boolean!
+  createdAtTimestamp: BigInt!
+}
+
+type LiquidityLock @entity {
+  id: ID!
+  pool: Pool!
+  owner: Bytes!
+  amountLP: BigDecimal!
+  unlockTimestamp: BigInt!
+  isBurntPermanently: Boolean!
+  createdAtTimestamp: BigInt!
+}

@@ -1,0 +1,40 @@
+name: hanokswap-indexer
+version: 1.0.0
+description: Envio HyperIndex & Goldsky Real-Time Event Pipeline for Hanokswap on Giwa Chain
+networks:
+  - id: 91342 # Dunamu Giwa Sepolia Testnet
+    rpc_config:
+      url: https://sepolia-rpc.giwa.io
+      sync_mode: "hypersync" # Sub-500ms real-time event pipeline
+    start_block: 1
+    contracts:
+      - name: GiwaPoolFactory
+        address: "0x89C0000000000000000000000000000000000010"
+        handler: src/EventHandlers.ts
+        events:
+          - event: "PoolCreated(address indexed token0, address indexed token1, uint24 indexed fee, int24 tickSpacing, address pool)"
+      - name: GiwaConcentratedLiquidityPool
+        address: "0x89C0000000000000000000000000000000000020"
+        handler: src/EventHandlers.ts
+        events:
+          - event: "Swap(address indexed sender, address indexed recipient, int256 amount0, int256 amount1, uint160 sqrtPriceX96, uint128 liquidity, int24 tick)"
+          - event: "Mint(address sender, address indexed owner, int24 indexed tickLower, int24 indexed tickUpper, uint128 amount, uint256 amount0, uint256 amount1)"
+          - event: "Burn(address indexed owner, int24 indexed tickLower, int24 indexed tickUpper, uint128 amount, uint256 amount0, uint256 amount1)"
+          - event: "Collect(address indexed owner, address recipient, int24 indexed tickLower, int24 indexed tickUpper, uint128 amount0, uint128 amount1)"
+      - name: VeHanokGaugeController
+        address: "0x89C4000000000000000000000000000000000002"
+        handler: src/EventHandlers.ts
+        events:
+          - event: "VoteCast(address indexed voter, address indexed pool, uint256 weight, uint256 votingPower, uint256 epoch)"
+      - name: HanokBondingCurveLaunchpad
+        address: "0x89C5000000000000000000000000000000000001"
+        handler: src/EventHandlers.ts
+        events:
+          - event: "TokenLaunched(address indexed token, address indexed creator, string name, string symbol, uint256 initialSupply)"
+          - event: "Graduated(address indexed token, address indexed clammPool, uint256 ethGraduated, uint256 tokensGraduated)"
+      - name: HanokLiquidityLocker
+        address: "0x89C5000000000000000000000000000000000002"
+        handler: src/EventHandlers.ts
+        events:
+          - event: "LockCreated(uint256 indexed lockId, address indexed lpToken, address indexed owner, uint256 amount, uint256 unlockTimestamp)"
+          - event: "LiquidityBurnt(uint256 indexed lockId, address indexed lpToken, uint256 amount)"

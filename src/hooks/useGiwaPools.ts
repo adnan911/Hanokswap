@@ -14,7 +14,6 @@ import {
   GIWA_POOL_USDC_EURC,
   USDC_ADDRESS,
   EURC_ADDRESS,
-  KRWC_ADDRESS,
   GIWA_WETH,
 } from '../contracts';
 import indexedPoolsData from '../data/indexed-pools.json';
@@ -120,19 +119,6 @@ export function useGiwaPools(_provider?: EIP1193Provider, userAddress?: string) 
           feeTier: 100,
           feePercent: '0.01%',
         },
-        {
-          address: '0x9999000000000000000000000000000000000001' as Address,
-          name: 'KRWC / USDC',
-          token0: KRWC_ADDRESS,
-          token1: USDC_ADDRESS,
-          symbol0: 'KRWC',
-          symbol1: 'USDC',
-          decimals0: 6,
-          decimals1: 6,
-          poolType: 'STABLE',
-          feeTier: 500,
-          feePercent: '0.05%',
-        },
       ];
 
       const loadedPools: GiwaPoolData[] = [];
@@ -146,6 +132,8 @@ export function useGiwaPools(_provider?: EIP1193Provider, userAddress?: string) 
         let userPos: GiwaPoolData['userPosition'] = undefined;
 
         try {
+          const deployed = await Promise.all([pool.address, pool.token0, pool.token1].map(address => client.getBytecode({ address })));
+          if (deployed.some(code => !code || code === '0x')) continue;
           const [bal0, bal1] = await Promise.all([
             client.readContract({
               address: pool.token0,
@@ -222,11 +210,15 @@ export function useGiwaPools(_provider?: EIP1193Provider, userAddress?: string) 
         if (indexed) {
           const v0 = Number(formatUnits(BigInt(indexed.volumeToken0 || '0'), pool.decimals0));
           const v1 = Number(formatUnits(BigInt(indexed.volumeToken1 || '0'), pool.decimals1));
-          volume24hUsd = pool.poolType === 'CLAMM' ? v0 + v1 * 2600 : v0 + v1 * 1.08;
+          // This cache contains lifetime volumes, not a 24-hour window.
+          // Do not advertise cumulative activity as today's volume or yield.
+          void v0;
+          void v1;
+          volume24hUsd = 0;
         }
 
         const feeRate = pool.feeTier / 1000000;
-        const estimatedApy = tvlUsd > 10 ? ((volume24hUsd * feeRate * 365) / tvlUsd) * 100 : 8.5;
+        const estimatedApy = tvlUsd > 10 ? ((volume24hUsd * feeRate * 365) / tvlUsd) * 100 : 0;
 
         loadedPools.push({
           ...pool,
@@ -234,7 +226,7 @@ export function useGiwaPools(_provider?: EIP1193Provider, userAddress?: string) 
           reserve1: Number(r1).toFixed(pool.decimals1 >= 18 ? 4 : 2),
           tvlUsd,
           volume24hUsd,
-          estimatedApy: Math.max(estimatedApy, 4.2),
+          estimatedApy,
           currentPrice,
           userPosition: userPos,
         });

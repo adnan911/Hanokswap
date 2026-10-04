@@ -17,7 +17,7 @@ export async function waitForSuccess(
 ) {
   const receipt = await client.waitForTransactionReceipt({ hash });
   if (receipt.status !== "success") {
-    throw new Error("Transaction was mined but reverted on-chain — no funds moved. Check the transaction on Arcscan for the exact reason.");
+    throw new Error("Transaction was mined but reverted on-chain — no funds moved. Check the transaction in the network explorer for the exact reason.");
   }
   return receipt;
 }

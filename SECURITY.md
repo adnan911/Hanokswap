@@ -1,5 +1,7 @@
 # Security notes
 
+The historical review below concerns FlowFi/Arc contracts. It is not an audit of the current GIWA contract suite. See [the GIWA testnet code review](docs/TESTNET_AUDIT.md) for current findings and verification limits.
+
 ## Reporting a vulnerability
 
 Found a security issue? Email **contact@flowfi.finance** with what you found and, if possible, how to reproduce it. Please don't open a public GitHub issue for anything that could put real funds at risk — give a reasonable window to fix it before any public disclosure. This is a solo-developer project without a formal bug bounty budget right now, but every genuine report gets read and taken seriously.

@@ -39,7 +39,7 @@ contract GiwaDualEngineTest is Test {
         factory = new GiwaPoolFactory(address(feeVault), address(clDeployer), address(stableDeployer));
         clDeployer.setFactory(address(factory));
         stableDeployer.setFactory(address(factory));
-        router = new GiwaUniversalRouter(address(factory), address(weth));
+        router = new GiwaUniversalRouter(address(factory), address(weth), address(0));
         vm.stopPrank();
 
         // Deal ETH & Mint Mock Tokens

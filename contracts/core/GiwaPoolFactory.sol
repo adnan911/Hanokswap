@@ -60,6 +60,7 @@ contract GiwaPoolFactory is IGiwaPoolFactory {
         require(tokenA != tokenB, "GiwaPoolFactory: IDENTICAL_ADDRESSES");
         (address token0, address token1) = tokenA < tokenB ? (tokenA, tokenB) : (tokenB, tokenA);
         require(token0 != address(0), "GiwaPoolFactory: ZERO_ADDRESS");
+        require(token0.code.length > 0 && token1.code.length > 0, "GiwaPoolFactory: TOKEN_NOT_CONTRACT");
         require(getPoolMapping[token0][token1][fee][isStable] == address(0), "GiwaPoolFactory: POOL_EXISTS");
 
         int24 tickSpacing = feeAmountTickSpacing[fee];

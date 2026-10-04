@@ -162,7 +162,7 @@ contracts/
 ---
 
 ## 2.6 Cross-Chain & Interoperability Design
-- **L1 $\leftrightarrow$ L2 Canonical Bridge Integration:** Standard deposit/withdrawal interfaces via Giwa L1StandardBridge (`0xfb81df377572C9907119Ee087dDcb1Fae3fD752C`) and L2StandardBridge (`0x4200000000000000000000000000000000000010`).
+- **L1 $\leftrightarrow$ L2 Canonical Bridge Integration:** Standard deposit/withdrawal interfaces via Giwa L1StandardBridge (`0x77b2ffc0F57598cAe1DB76cb398059cF5d10A7E7`) and L2StandardBridge (`0x4200000000000000000000000000000000000010`).
 - **1-Click Bridge-and-Swap:** Periphery contracts execute `bridgeAndSwap()` taking L1 token deposits, bridging via OP messenger, and executing swaps upon L2 finality.
 
 ---

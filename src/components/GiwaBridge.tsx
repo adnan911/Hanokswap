@@ -2,10 +2,15 @@ import { useState } from 'react';
 import type { EIP1193Provider } from 'viem';
 import {
   createWalletClient,
+  createPublicClient,
   custom,
+  http,
+  parseAbi,
   parseUnits,
   type Address,
 } from 'viem';
+import { sepolia } from 'viem/chains';
+import { waitForSuccess } from '../txHelpers';
 import { giwaSepolia, GIWA_STANDARD_RPC, GIWA_FLASHBLOCKS_RPC } from '../chains';
 import {
   GIWA_L1_STANDARD_BRIDGE,
@@ -14,6 +19,8 @@ import {
 import { showToast } from '../toast';
 import { useLanguage } from '../LanguageContext';
 import { useIsMobile } from '../useIsMobile';
+import { useDojang } from '../hooks/useDojang';
+import { DojangIdentityModal } from './DojangIdentityModal';
 import {
   ArrowRightLeft,
   ExternalLink,
@@ -22,6 +29,8 @@ import {
   Droplets,
   Layers,
   Sparkles,
+  ShieldCheck,
+  Award,
 } from 'lucide-react';
 
 interface Props {
@@ -41,6 +50,10 @@ export default function GiwaBridge({ provider, address }: Props) {
   const [isBridging, setIsBridging] = useState(false);
   const [isClaiming, setIsClaiming] = useState<string | null>(null);
   const [bridgeTxHash, setBridgeTxHash] = useState<string | null>(null);
+  const [bridgeExplorer, setBridgeExplorer] = useState('https://sepolia.etherscan.io');
+  const [showDojangModal, setShowDojangModal] = useState(false);
+
+  const { profile: dojangProfile } = useDojang(address as Address | undefined);
 
   // Add Giwa Sepolia to MetaMask
   const handleAddNetwork = async () => {
@@ -67,50 +80,11 @@ export default function GiwaBridge({ provider, address }: Props) {
     }
   };
 
-  // Testnet Faucet Claim (Simulated mint for testnet tokens)
-  const handleClaimFaucet = async (_tokenName: string, symbol: string, amount: string) => {
-    if (!provider || !address) {
-      showToast('Please connect your wallet first', 'error');
-      return;
-    }
-
-    try {
-      setIsClaiming(symbol);
-      showToast(
-        language === 'ko'
-          ? `${symbol} 테스트넷 토큰 요청 중...`
-          : `Requesting ${symbol} testnet tokens...`,
-        'info'
-      );
-
-      const walletClient = createWalletClient({
-        account: address as Address,
-        chain: giwaSepolia,
-        transport: custom(provider),
-      });
-
-      // Send simulated testnet transaction
-      await walletClient.sendTransaction({
-        to: address as Address,
-        value: 0n,
-        data: '0x',
-      });
-
-      showToast(
-        language === 'ko'
-          ? `${amount} ${symbol} 테스트넷 토큰이 성공적으로 지급되었습니다!`
-          : `Successfully claimed ${amount} ${symbol} on Giwa Sepolia!`,
-        'success'
-      );
-    } catch (err: any) {
-      console.error(err);
-      showToast(
-        language === 'ko' ? `${symbol} 수도꼭지 요청 완료 (테스트넷)` : `Claimed ${amount} ${symbol} (Testnet)`,
-        'success'
-      );
-    } finally {
-      setIsClaiming(null);
-    }
+  // No faucet backend is deployed in this app. Never spend gas on a dummy claim.
+  const handleClaimFaucet = async (_tokenName: string, symbol: string, _amount: string) => {
+    setIsClaiming(null);
+    window.open(symbol === 'ETH' ? 'https://faucet.giwa.io/' : 'https://sepolia-playground.giwa.io/', '_blank', 'noopener,noreferrer');
+    showToast(`${symbol} claiming is not integrated. Use the official GIWA faucet guide; no claim was submitted.`, 'info');
   };
 
   // Bridge Execute
@@ -123,27 +97,33 @@ export default function GiwaBridge({ provider, address }: Props) {
     try {
       setIsBridging(true);
       setBridgeTxHash(null);
+      if (selectedAsset !== 'ETH') throw new Error('ERC-20 bridging requires verified L1/L2 token mappings and is not available yet. Select ETH.');
+      const amount = parseUnits(bridgeAmount || '0', 18);
+      if (amount <= 0n) throw new Error('Enter a positive bridge amount.');
+      const sourceChain = bridgeDirection === 'l1_to_l2' ? sepolia : giwaSepolia;
+      await provider.request({ method: 'wallet_switchEthereumChain', params: [{ chainId: `0x${sourceChain.id.toString(16)}` }] });
+      const publicClient = createPublicClient({ chain: sourceChain, transport: http() });
 
       const walletClient = createWalletClient({
         account: address as Address,
-        chain: giwaSepolia,
+        chain: sourceChain,
         transport: custom(provider),
       });
 
       const targetBridge =
         bridgeDirection === 'l1_to_l2' ? GIWA_L1_STANDARD_BRIDGE : GIWA_L2_STANDARD_BRIDGE;
 
-      const hash = await walletClient.sendTransaction({
-        to: targetBridge,
-        value: selectedAsset === 'ETH' ? parseUnits(bridgeAmount || '0', 18) : 0n,
-        data: '0x',
-      });
+      const simulation = await publicClient.simulateContract({ address: targetBridge, abi: parseAbi(['function bridgeETHTo(address to,uint32 minGasLimit,bytes extraData) payable']), functionName: 'bridgeETHTo', args: [address as Address, 200_000, '0x'], account: address as Address, value: amount });
+      const hash = await walletClient.writeContract(simulation.request);
 
       setBridgeTxHash(hash);
+      setBridgeExplorer(sourceChain.blockExplorers.default.url);
+      showToast('Bridge submitted. Waiting for the source-chain receipt...', 'info');
+      await waitForSuccess(publicClient, hash);
       showToast(
         language === 'ko'
           ? '브릿지 트랜잭션이 제출되었습니다 (Giwa OP Stack).'
-          : 'Bridge transaction submitted via Giwa Standard Bridge.',
+          : bridgeDirection === 'l1_to_l2' ? 'Deposit confirmed on Sepolia. Destination delivery is pending.' : 'Withdrawal initiated on GIWA. L1 proving and finalization are required after the challenge period; use the official bridge to complete it.',
         'success'
       );
     } catch (err: any) {
@@ -287,9 +267,70 @@ export default function GiwaBridge({ provider, address }: Props) {
             </h2>
             <p style={{ fontSize: 13, color: 'var(--muted-foreground)', margin: 0, lineHeight: 1.5 }}>
               {language === 'ko'
-                ? 'HanokSwap DEX 및 Giwa 생태계 테스트를 위해 테스트넷 자산을 즉시 지급받으세요.'
-                : 'Instantly claim testnet stablecoins and assets to test HanokSwap DEX and Giwa pools.'}
+                ? '공식 GIWA Playground를 엽니다. USDC, EURC, KRWC 지급은 연결되지 않았습니다.'
+                : 'Open the official GIWA Playground. USDC, EURC and KRWC claims are not connected.'}
             </p>
+          </div>
+
+          {/* Dojang Sybil Protection Card */}
+          <div
+            style={{
+              padding: '12px 16px',
+              borderRadius: 16,
+              background: dojangProfile.isKYCVerified || dojangProfile.isVIPTrader ? 'rgba(59, 130, 246, 0.1)' : 'var(--muted)',
+              border: `1px solid ${dojangProfile.isKYCVerified || dojangProfile.isVIPTrader ? 'rgba(59, 130, 246, 0.3)' : 'var(--border)'}`,
+              marginBottom: 16,
+              display: 'flex',
+              alignItems: 'center',
+              justifyContent: 'space-between',
+              flexWrap: 'wrap',
+              gap: 10,
+            }}
+          >
+            <div style={{ display: 'flex', alignItems: 'center', gap: 10 }}>
+              <div
+                style={{
+                  width: 34,
+                  height: 34,
+                  borderRadius: 10,
+                  background: dojangProfile.isKYCVerified || dojangProfile.isVIPTrader ? 'rgba(59, 130, 246, 0.2)' : 'var(--card)',
+                  color: dojangProfile.isKYCVerified || dojangProfile.isVIPTrader ? '#3b82f6' : 'var(--muted-foreground)',
+                  display: 'flex',
+                  alignItems: 'center',
+                  justifyContent: 'center',
+                }}
+              >
+                {dojangProfile.isVIPTrader ? <Award size={18} /> : <ShieldCheck size={18} />}
+              </div>
+              <div>
+                <div style={{ fontSize: 13, fontWeight: 700, color: 'var(--foreground)' }}>
+                  {dojangProfile.isVIPTrader
+                    ? (language === 'ko' ? 'Dojang VIP 로컬 미리보기' : 'Dojang VIP local preview')
+                    : dojangProfile.isKYCVerified
+                    ? (language === 'ko' ? 'KYC 로컬 미리보기' : 'KYC local preview')
+                    : (language === 'ko' ? 'Dojang 로컬 미리보기' : 'Dojang local preview')}
+                </div>
+                <div style={{ fontSize: 11, color: 'var(--muted-foreground)' }}>
+                  {language === 'ko' ? '공식 인증이나 수도꼭지 한도를 변경하지 않습니다.' : 'Does not verify identity or change official faucet limits.'}
+                </div>
+              </div>
+            </div>
+
+            <button
+              onClick={() => setShowDojangModal(true)}
+              style={{
+                padding: '6px 14px',
+                borderRadius: 10,
+                border: '1px solid var(--border)',
+                background: 'var(--card)',
+                color: 'var(--primary)',
+                fontSize: 12,
+                fontWeight: 700,
+                cursor: 'pointer',
+              }}
+            >
+              {dojangProfile.upIdName ? dojangProfile.upIdName : (language === 'ko' ? 'Dojang 도장 관리' : 'Manage Dojang')}
+            </button>
           </div>
 
           <div style={{ display: 'flex', flexDirection: 'column', gap: 12, marginBottom: 24 }}>
@@ -309,7 +350,7 @@ export default function GiwaBridge({ provider, address }: Props) {
                 <span style={{ fontSize: 24 }}>💵</span>
                 <div>
                   <div style={{ fontSize: 14, fontWeight: 700, color: 'var(--foreground)' }}>
-                    1,000 USDC
+                    USDC (not connected)
                   </div>
                   <div style={{ fontSize: 11, color: 'var(--muted-foreground)' }}>USD Coin Testnet</div>
                 </div>
@@ -329,7 +370,7 @@ export default function GiwaBridge({ provider, address }: Props) {
                   cursor: isClaiming === 'USDC' ? 'not-allowed' : 'pointer',
                 }}
               >
-                {isClaiming === 'USDC' ? 'Claiming...' : (language === 'ko' ? '받기 (Claim)' : 'Claim')}
+                {language === 'ko' ? 'Playground 열기' : 'Open Playground'}
               </button>
             </div>
 
@@ -349,7 +390,7 @@ export default function GiwaBridge({ provider, address }: Props) {
                 <span style={{ fontSize: 24 }}>₩</span>
                 <div>
                   <div style={{ fontSize: 14, fontWeight: 700, color: 'var(--foreground)' }}>
-                    1,000,000 KRWC
+                    KRWC (not connected)
                   </div>
                   <div style={{ fontSize: 11, color: 'var(--muted-foreground)' }}>Korean Won Coin Testnet</div>
                 </div>
@@ -369,7 +410,7 @@ export default function GiwaBridge({ provider, address }: Props) {
                   cursor: isClaiming === 'KRWC' ? 'not-allowed' : 'pointer',
                 }}
               >
-                {isClaiming === 'KRWC' ? 'Claiming...' : (language === 'ko' ? '받기 (Claim)' : 'Claim')}
+                {language === 'ko' ? 'Playground 열기' : 'Open Playground'}
               </button>
             </div>
 
@@ -389,7 +430,7 @@ export default function GiwaBridge({ provider, address }: Props) {
                 <span style={{ fontSize: 24 }}>💶</span>
                 <div>
                   <div style={{ fontSize: 14, fontWeight: 700, color: 'var(--foreground)' }}>
-                    1,000 EURC
+                    EURC (not connected)
                   </div>
                   <div style={{ fontSize: 11, color: 'var(--muted-foreground)' }}>Euro Coin Testnet</div>
                 </div>
@@ -409,7 +450,7 @@ export default function GiwaBridge({ provider, address }: Props) {
                   cursor: isClaiming === 'EURC' ? 'not-allowed' : 'pointer',
                 }}
               >
-                {isClaiming === 'EURC' ? 'Claiming...' : (language === 'ko' ? '받기 (Claim)' : 'Claim')}
+                {language === 'ko' ? 'Playground 열기' : 'Open Playground'}
               </button>
             </div>
           </div>
@@ -656,7 +697,7 @@ export default function GiwaBridge({ provider, address }: Props) {
                 <span>{language === 'ko' ? '브릿지 제출 완료' : 'Bridge Submitted'}</span>
               </div>
               <a
-                href={`https://sepolia-explorer.giwa.io/tx/${bridgeTxHash}`}
+                href={`${bridgeExplorer}/tx/${bridgeTxHash}`}
                 target="_blank"
                 rel="noreferrer"
                 style={{
@@ -675,6 +716,13 @@ export default function GiwaBridge({ provider, address }: Props) {
           )}
         </div>
       )}
+
+      {/* Dojang Identity Modal */}
+      <DojangIdentityModal
+        isOpen={showDojangModal}
+        onClose={() => setShowDojangModal(false)}
+        address={address as Address | undefined}
+      />
     </div>
   );
 }
