@@ -13,7 +13,6 @@ import GiwaSwap from "./components/GiwaSwap";
 import GiwaBridge from "./components/GiwaBridge";
 import GiwaTokenDeployer from "./components/GiwaTokenDeployer";
 import GiwaDocsGuide from "./components/GiwaDocsGuide";
-import AiCopilotMainnet from "./components/AiCopilotMainnet";
 import ToastContainer from "./components/ToastContainer";
 import MarketTicker from "./components/MarketTicker";
 import NotificationCenter from "./components/NotificationCenter";
@@ -28,6 +27,7 @@ import LanguageToggle from "./components/LanguageToggle";
 import LiquidityPools from "./components/LiquidityPools";
 import { UpIdBadge } from "./components/UpIdBadge";
 import { DojangIdentityModal } from "./components/DojangIdentityModal";
+import { TokenIcon } from "./components/TokenIcon";
 import { useDojang } from "./hooks/useDojang";
 import type { Address } from "viem";
 import {
@@ -370,7 +370,7 @@ function AppInner() {
                 <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center" }}>
                   <span className="prism-mono" style={{ fontSize: 24, fontWeight: 800, color: "var(--foreground)" }}>1.00</span>
                   <span style={{ display: "inline-flex", alignItems: "center", gap: 6, background: "var(--card)", border: "1px solid var(--border)", padding: "5px 10px", borderRadius: 999, fontWeight: 700, fontSize: 13, color: "var(--foreground)" }}>
-                    <span style={{ fontSize: 14 }}>⟠</span> ETH
+                    <TokenIcon symbol="ETH" size={18} /> ETH
                   </span>
                 </div>
               </div>
@@ -389,7 +389,7 @@ function AppInner() {
                 <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center" }}>
                   <span className="prism-mono" style={{ fontSize: 24, fontWeight: 800, color: "var(--foreground)" }}>3,150.00</span>
                   <span style={{ display: "inline-flex", alignItems: "center", gap: 6, background: "var(--card)", border: "1px solid var(--border)", padding: "5px 10px", borderRadius: 999, fontWeight: 700, fontSize: 13, color: "var(--foreground)" }}>
-                    <span style={{ fontSize: 14 }}>💵</span> USDC
+                    <TokenIcon symbol="USDC" size={18} /> USDC
                   </span>
                 </div>
               </div>
@@ -767,13 +767,6 @@ function AppInner() {
                   onNavigateToSwap={() => setTab("swap")}
                 />
               )}
-              {tab !== "docs" && (
-                <p role="note" style={{ padding: 12, border: '1px solid var(--border)', borderRadius: 8, fontSize: 13 }}>
-                  {language === 'ko'
-                    ? '테스트넷 미리보기: 신원 배지, 지정가 주문, DCA, 토큰 출시, 파밍 및 거버넌스는 로컬 시뮬레이션이며 온체인 검증이나 거래가 아닙니다.'
-                    : 'Testnet preview: identity badges, limit orders, DCA, token launches, farming, and governance are local simulations. These actions do not verify identity or execute on-chain transactions.'}
-                </p>
-              )}
               {tab === "security" && <SecurityGovernancePanel />}
               {tab === "history" && <TxHistory address={wallet ? wallet.address : "0x0000000000000000000000000000000000000000"} />}
             </div>
@@ -813,7 +806,6 @@ function AppInner() {
         )}
       </main>
 
-      {wallet && tab !== "home" && <AiCopilotMainnet onNavigate={(t) => setTab((t === "mainnetswap" ? "swap" : t === "mainnetbridge" ? "bridge" : t === "mainnethistory" ? "history" : t) as Tab)} />}
       {showOnboarding && <OnboardingModal onClose={() => setShowOnboarding(false)} />}
       {showConnectModal && <ConnectModal onClose={() => setShowConnectModal(false)} onConnected={handleConnected} />}
     </div>

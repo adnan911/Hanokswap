@@ -197,9 +197,9 @@ export default function GiwaTokenDeployer({ provider, address, onNavigateToPools
       {/* Mode Switcher */}
       <div style={{ display: 'flex', gap: 8, background: 'var(--card)', padding: 6, borderRadius: 16, border: '1px solid var(--border)', overflowX: 'auto' }}>
         {[
-          { id: 'LAUNCHPAD', label: language === 'ko' ? '🚀 본딩커브 페어 런치패드' : '🚀 Bonding Curve Fair Launch', desc: 'Pump.fun / Virtuals Style' },
-          { id: 'STANDARD_ERC20', label: language === 'ko' ? '🪙 안티스나이퍼 ERC-20' : '🪙 Anti-Snipe ERC-20', desc: 'Max-Wallet & Cooldown' },
-          { id: 'LOCKER', label: language === 'ko' ? '🔒 LP 락커 & 소각기' : '🔒 LP Locker & Burner', desc: 'Proof of Liquidity Lock' },
+          { id: 'LAUNCHPAD', label: language === 'ko' ? '본딩커브 런치패드' : 'Bonding Curve Launchpad', desc: language === 'ko' ? '공정 발행 모델' : 'Fair launch bonding model' },
+          { id: 'STANDARD_ERC20', label: language === 'ko' ? 'ERC-20 토큰 생성' : 'Standard ERC-20', desc: language === 'ko' ? '안티 스나이핑 보호' : 'Anti-snipe protection' },
+          { id: 'LOCKER', label: language === 'ko' ? '유동성 락커' : 'Liquidity Locker', desc: language === 'ko' ? 'LP 락업 & 소각' : 'Proof of LP lock' },
         ].map((tab) => (
           <button
             key={tab.id}

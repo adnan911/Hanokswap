@@ -1,27 +1,28 @@
 import { useState } from "react";
+import { Repeat, Zap, ShieldCheck, Lock } from "lucide-react";
 
 const STORAGE_KEY = "hanokswap-onboarding-seen";
 
 const STEPS = [
   {
-    icon: "⛩️",
+    icon: Repeat,
     title: "Welcome to HanokSwap",
-    body: "A next-generation non-custodial multi-chain DEX and cross-chain bridge. Trade tokens seamlessly across Ethereum, Base, Arbitrum, Optimism, Polygon, and more.",
+    body: "Sub-second decentralized trading and deep multi-currency FX liquidity for KRWC, USDC, EURC, and ETH.",
   },
   {
-    icon: "⚡",
-    title: "Multi-Chain DEX & Bridge",
-    body: "Access the deepest liquidity across major EVM networks with optimal routing, minimal slippage, and instant cross-chain bridging.",
+    icon: Zap,
+    title: "0.2s Flashblocks Finality",
+    body: "Execute trades with near-instant block times, minimal latency, and institutional Smart Order Routing.",
   },
   {
-    icon: "🤖",
-    title: "Hanok AI Copilot",
-    body: "The AI Copilot answers market queries, analyzes token trends, and helps you navigate swaps, bridges, and portfolio management.",
+    icon: ShieldCheck,
+    title: "Dunamu Dojang Attestation",
+    body: "Zero-knowledge identity credentials and fee tiers verified natively without compromising privacy.",
   },
   {
-    icon: "🧭",
-    title: "Pure Self-Custody",
-    body: "Every transaction is signed directly in your connected browser wallet. HanokSwap never holds your keys or funds.",
+    icon: Lock,
+    title: "Non-Custodial & Secure",
+    body: "Every swap and liquidity action is signed directly in your connected wallet. Your keys, your crypto.",
   },
 ];
 
@@ -45,6 +46,7 @@ export default function OnboardingModal({ onClose }: { onClose: () => void }) {
   const [step, setStep] = useState(0);
   const isLast = step === STEPS.length - 1;
   const current = STEPS[step];
+  const StepIcon = current.icon;
 
   function finish() {
     markOnboardingSeen();
@@ -55,8 +57,8 @@ export default function OnboardingModal({ onClose }: { onClose: () => void }) {
     <div style={{ position: "fixed", inset: 0, background: "rgba(0,0,0,0.75)", backdropFilter: "blur(8px)", zIndex: 1000, display: "flex", alignItems: "center", justifyContent: "center", padding: "1rem" }}>
       <div style={{ background: "var(--card)", border: "1px solid var(--border)", borderRadius: 20, padding: "2rem", width: "100%", maxWidth: 420, boxShadow: "0 24px 64px rgba(0,0,0,0.6)" }}>
         <div style={{ display: "flex", justifyContent: "center", marginBottom: 18 }}>
-          <div style={{ width: 56, height: 56, borderRadius: 16, background: "var(--muted)", border: "1px solid var(--border)", display: "flex", alignItems: "center", justifyContent: "center", fontSize: 26 }}>
-            {current.icon}
+          <div style={{ width: 56, height: 56, borderRadius: 16, background: "var(--muted)", border: "1px solid var(--border)", display: "flex", alignItems: "center", justifyContent: "center", color: "var(--primary)" }}>
+            <StepIcon size={26} />
           </div>
         </div>
 

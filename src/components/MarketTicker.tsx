@@ -100,24 +100,24 @@ export default function MarketTicker() {
             }}
             title="업비트 실시간 차익거래 레이더 열기 (Click to open Arbitrage Radar)"
           >
-            <span style={{ fontSize: 11, fontWeight: 800, color: "var(--primary)" }}>🇰🇷 UPBIT</span>
-            <span style={{ fontSize: 11.5, color: "var(--foreground)", fontWeight: 700 }}>
+            <span style={{ fontSize: 11, fontWeight: 700, letterSpacing: '0.04em', color: "var(--primary)" }}>UPBIT</span>
+            <span style={{ fontSize: 11.5, color: "var(--foreground)", fontWeight: 600 }}>
               USD/KRW {formatKrw(kimchi.usdKrwRate)}
             </span>
             <span
               style={{
                 fontSize: 11,
-                fontWeight: 800,
+                fontWeight: 700,
                 padding: "2px 6px",
-                borderRadius: 4,
-                background: kimchi.ethKimchiPremiumPct >= 0 ? "rgba(16, 185, 129, 0.15)" : "rgba(239, 68, 68, 0.15)",
+                borderRadius: 6,
+                background: kimchi.ethKimchiPremiumPct >= 0 ? "rgba(16, 185, 129, 0.12)" : "rgba(239, 68, 68, 0.12)",
                 color: kimchi.ethKimchiPremiumPct >= 0 ? "#10B981" : "#EF4444",
               }}
             >
-              김프 {kimchi.ethKimchiPremiumPct >= 0 ? "+" : ""}{kimchi.ethKimchiPremiumPct.toFixed(2)}%
+              Kimchi {kimchi.ethKimchiPremiumPct >= 0 ? "+" : ""}{kimchi.ethKimchiPremiumPct.toFixed(2)}%
             </span>
-            <span style={{ fontSize: 10, color: "var(--primary)", fontWeight: 700 }}>
-              ⚡ ARB
+            <span style={{ fontSize: 10.5, color: "var(--primary)", fontWeight: 700, background: 'rgba(217, 119, 6, 0.12)', padding: '2px 6px', borderRadius: 4 }}>
+              ARB
             </span>
           </div>
 

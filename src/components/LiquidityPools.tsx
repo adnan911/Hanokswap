@@ -218,10 +218,10 @@ export default function LiquidityPools({ provider, address, onRefresh }: Props) 
       {/* Yield Architecture Mode Switcher */}
       <div style={{ display: 'flex', gap: 8, background: 'var(--card)', padding: 6, borderRadius: 16, border: '1px solid var(--border)', overflowX: 'auto' }}>
         {[
-          { id: 'POOLS', label: language === 'ko' ? '💧 일반 유동성 풀' : '💧 Classic Pools', desc: 'CLAMM & Stable Curve' },
-          { id: 'ALM', label: language === 'ko' ? '⚡ 자동화 ALM 금고' : '⚡ ALM Auto-Vaults', desc: 'Gamma / Arrakis Rebalancer' },
-          { id: 'VE_HANOK', label: language === 'ko' ? '🏛️ veHANOK 거버넌스' : '🏛️ veHANOK & Gauges', desc: 'Lock & Weekly Voting' },
-          { id: 'FARMS', label: language === 'ko' ? '🌾 멀티 보상 슈퍼팜' : '🌾 Multi-Reward Farms', desc: 'Triple Token Yields' },
+          { id: 'POOLS', label: language === 'ko' ? '유동성 풀' : 'Pools', desc: 'CLAMM & Stableswap' },
+          { id: 'ALM', label: language === 'ko' ? '자동화 금고' : 'Auto-Vaults', desc: language === 'ko' ? 'ALM 동적 리밸런싱' : 'Dynamic rebalancing' },
+          { id: 'VE_HANOK', label: language === 'ko' ? 'veHANOK 거버넌스' : 'veHANOK Gauges', desc: language === 'ko' ? '주간 투표 및 부스트' : 'Vote & boost yield' },
+          { id: 'FARMS', label: language === 'ko' ? '슈퍼팜' : 'Superfarms', desc: language === 'ko' ? '멀티 토큰 리워드' : 'Multi-token rewards' },
         ].map((sec) => (
           <button
             key={sec.id}

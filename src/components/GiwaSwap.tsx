@@ -41,6 +41,7 @@ import {
   type DEXDCAStream,
 } from '../lib/dca';
 import { DojangIdentityModal } from './DojangIdentityModal';
+import { TokenIcon } from './TokenIcon';
 import {
   ArrowDownUp,
   Settings2,
@@ -149,7 +150,7 @@ interface Props {
   onNavigateToDeployer?: () => void;
 }
 
-export default function GiwaSwap({ provider, address, onNavigateToDocs, onNavigateToDeployer }: Props) {
+export default function GiwaSwap({ provider, address }: Props) {
   const { t, language } = useLanguage();
   const isMobile = useIsMobile();
 
@@ -637,18 +638,36 @@ export default function GiwaSwap({ provider, address, onNavigateToDocs, onNaviga
         {/* FROM BOX */}
         <div
           style={{
-            padding: 16,
-            borderRadius: 16,
+            padding: '14px 16px',
+            borderRadius: 18,
             background: 'var(--muted)',
             border: '1px solid var(--border)',
-            marginBottom: 8,
+            marginBottom: 6,
           }}
         >
-          <div style={{ display: 'flex', justifyContent: 'space-between', marginBottom: 8 }}>
-            <span style={{ fontSize: 12, fontWeight: 600, color: 'var(--muted-foreground)' }}>{t.youPay}</span>
-            <span style={{ fontSize: 12, color: 'var(--muted-foreground)' }}>
-              {t.balance}: <strong style={{ color: 'var(--foreground)' }}>{fromBalance}</strong>
-            </span>
+          <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: 6 }}>
+            <span style={{ fontSize: 12, fontWeight: 600, color: 'var(--muted-foreground)' }}>{t.youPay || 'You pay'}</span>
+            <div style={{ display: 'flex', alignItems: 'center', gap: 6, fontSize: 12, color: 'var(--muted-foreground)' }}>
+              <span>{t.balance}: <strong style={{ color: 'var(--foreground)' }}>{fromBalance}</strong></span>
+              {parseFloat(fromBalance) > 0 && (
+                <button
+                  type="button"
+                  onClick={() => setFromAmount(fromBalance)}
+                  style={{
+                    background: 'var(--card)',
+                    border: '1px solid var(--border)',
+                    borderRadius: 6,
+                    padding: '1px 6px',
+                    fontSize: 10,
+                    fontWeight: 800,
+                    color: 'var(--primary)',
+                    cursor: 'pointer',
+                  }}
+                >
+                  MAX
+                </button>
+              )}
+            </div>
           </div>
 
           <div style={{ display: 'flex', alignItems: 'center', gap: 12 }}>
@@ -656,12 +675,12 @@ export default function GiwaSwap({ provider, address, onNavigateToDocs, onNaviga
               type="number"
               value={fromAmount}
               onChange={(e) => setFromAmount(e.target.value)}
-              placeholder="0.0"
+              placeholder="0"
               style={{
                 flex: 1,
                 background: 'none',
                 border: 'none',
-                fontSize: 26,
+                fontSize: 28,
                 fontWeight: 800,
                 color: 'var(--foreground)',
                 outline: 'none',
@@ -675,20 +694,21 @@ export default function GiwaSwap({ provider, address, onNavigateToDocs, onNaviga
                 display: 'flex',
                 alignItems: 'center',
                 gap: 8,
-                padding: '8px 12px',
-                borderRadius: 12,
+                padding: '6px 12px 6px 8px',
+                borderRadius: 20,
                 background: 'var(--card)',
                 border: '1px solid var(--border)',
                 color: 'var(--foreground)',
-                fontSize: 14,
-                fontWeight: 700,
+                fontSize: 15,
+                fontWeight: 800,
                 cursor: 'pointer',
                 flexShrink: 0,
+                boxShadow: '0 2px 8px rgba(0,0,0,0.06)',
               }}
             >
-              <span>{fromToken.icon}</span>
+              <TokenIcon symbol={fromToken.symbol} size={24} />
               <span>{fromToken.symbol}</span>
-              <ChevronDown size={14} />
+              <ChevronDown size={14} style={{ color: 'var(--muted-foreground)' }} />
             </button>
           </div>
         </div>
@@ -697,6 +717,7 @@ export default function GiwaSwap({ provider, address, onNavigateToDocs, onNaviga
         <div style={{ display: 'flex', justifyContent: 'center', margin: '-14px 0', position: 'relative', zIndex: 2 }}>
           <button
             onClick={handleSwapTokens}
+            title="Swap direction"
             style={{
               width: 36,
               height: 36,
@@ -708,8 +729,11 @@ export default function GiwaSwap({ provider, address, onNavigateToDocs, onNaviga
               alignItems: 'center',
               justifyContent: 'center',
               cursor: 'pointer',
-              boxShadow: '0 4px 12px rgba(0,0,0,0.1)',
+              boxShadow: '0 4px 12px rgba(0,0,0,0.12)',
+              transition: 'transform 0.15s ease',
             }}
+            onMouseEnter={(e) => { e.currentTarget.style.transform = 'scale(1.08) rotate(180deg)'; }}
+            onMouseLeave={(e) => { e.currentTarget.style.transform = 'scale(1) rotate(0deg)'; }}
           >
             <ArrowDownUp size={16} />
           </button>
@@ -718,16 +742,16 @@ export default function GiwaSwap({ provider, address, onNavigateToDocs, onNaviga
         {/* TO BOX */}
         <div
           style={{
-            padding: 16,
-            borderRadius: 16,
+            padding: '14px 16px',
+            borderRadius: 18,
             background: 'var(--muted)',
             border: '1px solid var(--border)',
-            marginTop: 8,
-            marginBottom: 16,
+            marginTop: 6,
+            marginBottom: 14,
           }}
         >
-          <div style={{ display: 'flex', justifyContent: 'space-between', marginBottom: 8 }}>
-            <span style={{ fontSize: 12, fontWeight: 600, color: 'var(--muted-foreground)' }}>{language === 'ko' ? '예시 추정값 (실시간 아님)' : 'Illustrative estimate (not a live quote)'}</span>
+          <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: 6 }}>
+            <span style={{ fontSize: 12, fontWeight: 600, color: 'var(--muted-foreground)' }}>{t.youReceive || 'You receive'}</span>
             <span style={{ fontSize: 12, color: 'var(--muted-foreground)' }}>
               {t.balance}: <strong style={{ color: 'var(--foreground)' }}>{toBalance}</strong>
             </span>
@@ -738,12 +762,12 @@ export default function GiwaSwap({ provider, address, onNavigateToDocs, onNaviga
               type="text"
               readOnly
               value={toAmount}
-              placeholder="0.0"
+              placeholder="0"
               style={{
                 flex: 1,
                 background: 'none',
                 border: 'none',
-                fontSize: 26,
+                fontSize: 28,
                 fontWeight: 800,
                 color: 'var(--foreground)',
                 outline: 'none',
@@ -757,20 +781,21 @@ export default function GiwaSwap({ provider, address, onNavigateToDocs, onNaviga
                 display: 'flex',
                 alignItems: 'center',
                 gap: 8,
-                padding: '8px 12px',
-                borderRadius: 12,
+                padding: '6px 12px 6px 8px',
+                borderRadius: 20,
                 background: 'var(--card)',
                 border: '1px solid var(--border)',
                 color: 'var(--foreground)',
-                fontSize: 14,
-                fontWeight: 700,
+                fontSize: 15,
+                fontWeight: 800,
                 cursor: 'pointer',
                 flexShrink: 0,
+                boxShadow: '0 2px 8px rgba(0,0,0,0.06)',
               }}
             >
-              <span>{toToken.icon}</span>
+              <TokenIcon symbol={toToken.symbol} size={24} />
               <span>{toToken.symbol}</span>
-              <ChevronDown size={14} />
+              <ChevronDown size={14} style={{ color: 'var(--muted-foreground)' }} />
             </button>
           </div>
         </div>
@@ -1132,48 +1157,6 @@ export default function GiwaSwap({ provider, address, onNavigateToDocs, onNaviga
         </div>
       )}
 
-      {/* Footer Navigation Shortcuts */}
-      {(onNavigateToDocs || onNavigateToDeployer) && (
-        <div style={{ display: 'flex', justifyContent: 'center', gap: 16, marginTop: 12 }}>
-          {onNavigateToDeployer && (
-            <button
-              onClick={onNavigateToDeployer}
-              style={{
-                background: 'none',
-                border: 'none',
-                color: 'var(--muted-foreground)',
-                fontSize: 12,
-                cursor: 'pointer',
-                display: 'flex',
-                alignItems: 'center',
-                gap: 4,
-                textDecoration: 'underline',
-              }}
-            >
-              <span>🚀 {language === 'ko' ? '토큰 생성기' : 'Token Deployer'}</span>
-            </button>
-          )}
-          {onNavigateToDocs && (
-            <button
-              onClick={onNavigateToDocs}
-              style={{
-                background: 'none',
-                border: 'none',
-                color: 'var(--muted-foreground)',
-                fontSize: 12,
-                cursor: 'pointer',
-                display: 'flex',
-                alignItems: 'center',
-                gap: 4,
-                textDecoration: 'underline',
-              }}
-            >
-              <span>📖 {language === 'ko' ? 'DEX 개발자 문서' : 'Developer Docs'}</span>
-            </button>
-          )}
-        </div>
-      )}
-
       {/* Select Token Modals */}
       {(showFromModal || showToModal) && (
         <div
@@ -1206,8 +1189,8 @@ export default function GiwaSwap({ provider, address, onNavigateToDocs, onNaviga
             }}
           >
             <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: 16 }}>
-              <div style={{ fontSize: 16, fontWeight: 800, color: 'var(--foreground)' }}>
-                {language === 'ko' ? '토큰 선택' : 'Select a Token'}
+              <div style={{ fontSize: 16, fontWeight: 700, color: 'var(--foreground)' }}>
+                {language === 'ko' ? '토큰 선택' : 'Select a token'}
               </div>
               <button
                 onClick={() => {
@@ -1220,13 +1203,14 @@ export default function GiwaSwap({ provider, address, onNavigateToDocs, onNaviga
                   fontSize: 18,
                   color: 'var(--muted-foreground)',
                   cursor: 'pointer',
+                  padding: 4,
                 }}
               >
                 ✕
               </button>
             </div>
 
-            <div style={{ display: 'flex', flexDirection: 'column', gap: 6, maxHeight: 320, overflowY: 'auto' }}>
+            <div style={{ display: 'flex', flexDirection: 'column', gap: 6, maxHeight: 340, overflowY: 'auto' }}>
               {tokens.map((tk) => (
                 <button
                   key={tk.symbol + tk.address}
@@ -1241,25 +1225,26 @@ export default function GiwaSwap({ provider, address, onNavigateToDocs, onNaviga
                     alignItems: 'center',
                     justifyContent: 'space-between',
                     padding: '10px 14px',
-                    borderRadius: 12,
+                    borderRadius: 14,
                     background: 'var(--muted)',
                     border: '1px solid var(--border)',
                     cursor: 'pointer',
                     textAlign: 'left',
+                    transition: 'all 0.15s ease',
                   }}
                 >
-                  <div style={{ display: 'flex', alignItems: 'center', gap: 10 }}>
-                    <span style={{ fontSize: 20 }}>{tk.icon}</span>
+                  <div style={{ display: 'flex', alignItems: 'center', gap: 12 }}>
+                    <TokenIcon symbol={tk.symbol} size={28} />
                     <div>
                       <div style={{ fontSize: 14, fontWeight: 700, color: 'var(--foreground)', display: 'flex', alignItems: 'center', gap: 4 }}>
                         {tk.symbol}
                         {isTokenDojangVerified(tk.address) && (
-                          <span title="Dunamu / Dojang Verified Asset">
-                            <ShieldCheck size={14} color="#3b82f6" />
+                          <span title="Dojang Verified Asset">
+                            <ShieldCheck size={14} color="#d97706" />
                           </span>
                         )}
                       </div>
-                      <div style={{ fontSize: 11, color: 'var(--muted-foreground)' }}>{tk.name}</div>
+                      <div style={{ fontSize: 12, color: 'var(--muted-foreground)' }}>{tk.name}</div>
                     </div>
                   </div>
                   {tk.isNative ? (

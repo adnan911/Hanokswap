@@ -116,7 +116,7 @@ export default function SecurityGovernancePanel() {
             <span style={{ fontSize: 11, fontWeight: 800, padding: '3px 8px', borderRadius: 999, background: '#ef4444', color: '#FFFFFF' }}>
               SECURITY &amp; RISK ENGINE
             </span>
-            <span style={{ fontSize: 12, color: 'var(--muted-foreground)' }}>🛡️ 48h Timelock · Safe 3/5 Multi-Sig · Circuit Breakers</span>
+            <span style={{ fontSize: 12, color: 'var(--muted-foreground)' }}>48h Timelock · Safe Multi-Sig · Circuit Breakers</span>
           </div>
         </div>
       </div>
@@ -124,9 +124,9 @@ export default function SecurityGovernancePanel() {
       {/* Tabs Switcher */}
       <div style={{ display: 'flex', gap: 8, background: 'var(--card)', padding: 6, borderRadius: 16, border: '1px solid var(--border)', overflowX: 'auto' }}>
         {[
-          { id: 'SCANNER', label: language === 'ko' ? '🛡️ 토큰 안전성 & 허니팟 스캐너' : '🛡️ Token Safety & Honeypot Scanner', desc: 'Pre-flight Risk Analysis' },
-          { id: 'GUARDIAN', label: language === 'ko' ? '🚨 디페그 서킷 브레이커' : '🚨 Depeg Circuit Breaker', desc: 'Emergency Pool Pausers' },
-          { id: 'TIMELOCK', label: language === 'ko' ? '🏛️ 48시간 타임락 & 멀티시그' : '🏛️ 48h Timelock & Multi-Sig', desc: '3-of-5 Safe Governance' },
+          { id: 'SCANNER', label: language === 'ko' ? '토큰 안전성 스캐너' : 'Token Safety Scanner', desc: language === 'ko' ? '리스크 사전 분석' : 'Pre-flight risk analysis' },
+          { id: 'GUARDIAN', label: language === 'ko' ? '디페그 서킷 브레이커' : 'Circuit Breaker', desc: language === 'ko' ? '긴급 유동성 보호' : 'Emergency pool guard' },
+          { id: 'TIMELOCK', label: language === 'ko' ? '타임락 & 멀티시그' : 'Timelock & Multi-Sig', desc: language === 'ko' ? '안전한 온체인 거버넌스' : 'Safe 3-of-5 governance' },
         ].map((tab) => (
           <button
             key={tab.id}
