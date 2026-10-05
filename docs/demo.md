@@ -1,40 +1,48 @@
-# Mainnet demo: Bridging USDC onto Arc
+# Hanokswap: Dunamu Giwa Chain DEX Demo & Verification Guide
 
-Two short clips showing FlowFi's Arc Mainnet bridge working end to end, with real funds.
+## 1. Overview
+Hanokswap is the native decentralized exchange (DEX) engineered for **Dunamu's GIWA Chain** (OP Stack Layer-2 Rollup with **0.2s Flashblocks**).
 
-## Native USDC bridge (Circle CCTP V2)
-
-[![Watch the demo](https://img.youtube.com/vi/j5hJ95oeA7E/hqdefault.jpg)](https://youtu.be/j5hJ95oeA7E)
-
-Sending 5 USDC from Base to Arc: the USDC is burned on Base via Circle's `depositForBurn`, then minted fresh on Arc via `receiveMessage`. No wrapped tokens — it's the same native USDC, just on a different chain.
-
-## Any-token bridge (LI.FI)
-
-[![Watch the demo](https://img.youtube.com/vi/f4Luu0ic3ek/hqdefault.jpg)](https://youtu.be/f4Luu0ic3ek)
-
-Bridging Base ETH into Arc USDC through the "Any token" tab, routed via LI.FI.
-
-## Verified receipts
-
-For proof beyond a recording, see the "Verified receipts" section of the main [`README.md`](../README.md#verified-receipts--real-transaction-hashes) — real transaction hashes from a live mainnet run, linked to Basescan and Arcscan.
+- **Chain Name:** GIWA Sepolia Testnet
+- **Chain ID:** `91342` (`0x164ce`)
+- **Standard RPC:** `https://sepolia-rpc.giwa.io`
+- **Flashblocks Sub-second RPC:** `https://sepolia-rpc-flashblocks.giwa.io`
+- **Block Explorer:** `https://sepolia-explorer.giwa.io`
 
 ---
 
-*The Gateway/Circle Wallet demo below is from FlowFi's Arc **Testnet** build. Gateway and Circle Wallet are not part of the Arc Mainnet product — mainnet uses self-custodial wallet connect only.*
+## 2. Core Implemented Features
 
-# 20-second demo: Gateway in one loop (Testnet)
+### 1. Ultra-Fast Sub-Second Swap (0.2s Flashblocks)
+- Automated Multi-Hop Smart Order Routing.
+- Direct integration with `GiwaUniversalRouter` (`0xEB75E64De5b487E17F766946fb6870e81d1e3a2E`) and `GiwaPoolFactory` (`0x61B268c494949550A70bE68eE1d0142b7342C4CC`).
+- Upbit KRW FX live oracle price feed proxy.
 
-The fastest way to see FlowFi's Circle stack actually work, not just get described.
+### 2. Dual Concentrated Liquidity (CLAMM) & Stableswap Pools
+- **CLAMM Pool (Tick-spaced 3000 bps):** WETH / USDC (`0x8E80F917Cf7CC54bD83A746780bA93E22c173570`).
+- **Deep Stableswap Pool (Stable Curve):** KRWC / USDC (`0xBA3ea5E8458938066AAb2D5b302C84D1bC689514`).
+- **Forex Stableswap Pool:** USDC / EURC (`0xa2a0FB6706D356b60F62f36FA5A31865E60D72e8`).
 
-[![Watch the demo](https://img.youtube.com/vi/-4Oq3hHD6Lk/hqdefault.jpg)](https://youtu.be/-4Oq3hHD6Lk)
+### 3. No-Code GIWA Token Deployer (100% Real On-Chain)
+- Direct bytecode deployment on GIWA Sepolia using Viem & `window.ethereum`.
+- Automatic contract verification & initial liquidity seeding into `GiwaPoolFactory`.
 
-*Circle Wallet sign-in (email → address) → Gateway deposit → instant cross-chain transfer → confirming it in History.*
+### 4. Dunamu Dojang Attestation & `up.id` Web3 Identity
+- Dunamu on-chain EAS attestation registry integration.
+- `up.id` name formatting & reverse identity resolution.
+- Fee rebate hook (up to 50% discount on swap fees for Dojang verified traders).
 
-## The loop
+### 5. Korean Tax Exporter (국세청 NTS Hometax CSV)
+- South Korean Income Tax Act (소득세법 제37조) 22% rate & basic exemption calculation.
+- One-click UTF-8 BOM CSV export for Korean Excel / Hancom Office.
 
-1. **Sign in** — email + 6-digit code, no wallet extension. (Circle Wallet tab)
-2. **Deposit** — put a small amount of USDC into your unified Gateway balance from any supported chain. (Gateway tab → "Deposit into unified balance")
-3. **Watch the balance** — the "BY CHAIN" breakdown updates to show what's actually available to spend from that chain.
-4. **Transfer** — move part of that balance to a different chain. Confirm & sign. Watch it land in under 500ms — no bridging wait, no separate mint transaction to track down.
+---
 
-That's the whole differentiator in one loop: deposit once, move instantly, anywhere it's supported.
+## 3. Verified Contracts on GIWA Sepolia
+- **Universal Swap Router:** `0xEB75E64De5b487E17F766946fb6870e81d1e3a2E`
+- **Pool Factory:** `0x61B268c494949550A70bE68eE1d0142b7342C4CC`
+- **CLAMM Deployer:** `0xe1b238bfa7859e6E04a263ec2619bE490dC9449e`
+- **Stableswap Deployer:** `0x258cD650E66824E77CC3A0777F40f7845dDA8F4B`
+- **USDC Contract:** `0x8A2e4292823DCF10f7e3E72263A639Ee58742159`
+- **KRWC Contract:** `0x9a0E572DaE28abFd0de5239c5a1Ac2b6BaaC9956`
+- **EURC Contract:** `0xaB4a8f8e103E1bea55Bac9158A6e670D1cB2AdEb`

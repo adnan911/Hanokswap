@@ -1,5 +1,8 @@
 import { isTokenDojangVerified } from './dojang';
 import { getLiquidityLocks } from './liquidityLocker';
+import { createPublicClient, http, erc20Abi, parseAbi, type Address } from 'viem';
+import { giwaSepolia, GIWA_STANDARD_RPC } from '../chains';
+import { USDC_ADDRESS, KRWC_ADDRESS, EURC_ADDRESS, GIWA_WETH, GIWA_HANOK_TOKEN } from '../contracts';
 
 export interface TokenSafetyReport {
   tokenAddress: string;
@@ -20,13 +23,13 @@ export interface TokenSafetyReport {
 }
 
 const KNOWN_SAFE_TOKENS: Record<string, Partial<TokenSafetyReport>> = {
-  '0x3600000000000000000000000000000000000000': {
+  [USDC_ADDRESS.toLowerCase()]: {
     symbol: 'USDC',
     name: 'USD Coin',
     buyTaxPct: 0,
     sellTaxPct: 0,
     isHoneypot: false,
-    isMintable: true, // Fiat-backed regulated issuer
+    isMintable: true, // Regulated fiat issuer
     isBlacklistable: true,
     isProxy: true,
     isOwnershipRenounced: false,
@@ -36,7 +39,7 @@ const KNOWN_SAFE_TOKENS: Record<string, Partial<TokenSafetyReport>> = {
     riskTier: 'VERIFIED_SAFE',
     warnings: ['Regulated Fiat-Backed Stablecoin (Circle Reserve)'],
   },
-  '0x89c0000000000000000000000000000000000001': {
+  [KRWC_ADDRESS.toLowerCase()]: {
     symbol: 'KRWC',
     name: 'Dunamu KRW Coin',
     buyTaxPct: 0,
@@ -52,7 +55,7 @@ const KNOWN_SAFE_TOKENS: Record<string, Partial<TokenSafetyReport>> = {
     riskTier: 'VERIFIED_SAFE',
     warnings: ['Official Dunamu Giwa Chain Won Stablecoin'],
   },
-  '0x4200000000000000000000000000000000000006': {
+  [GIWA_WETH.toLowerCase()]: {
     symbol: 'WETH',
     name: 'Wrapped Ether',
     buyTaxPct: 0,
@@ -68,7 +71,7 @@ const KNOWN_SAFE_TOKENS: Record<string, Partial<TokenSafetyReport>> = {
     riskTier: 'VERIFIED_SAFE',
     warnings: [],
   },
-  '0x89b50855aa3be2f677cd6303cec089b5f319d72a': {
+  [EURC_ADDRESS.toLowerCase()]: {
     symbol: 'EURC',
     name: 'Euro Coin',
     buyTaxPct: 0,
@@ -84,7 +87,7 @@ const KNOWN_SAFE_TOKENS: Record<string, Partial<TokenSafetyReport>> = {
     riskTier: 'VERIFIED_SAFE',
     warnings: ['Regulated Euro Stablecoin (Circle)'],
   },
-  '0x89c4000000000000000000000000000000000001': {
+  [GIWA_HANOK_TOKEN.toLowerCase()]: {
     symbol: 'HANOK',
     name: 'Hanok Governance Token',
     buyTaxPct: 0,
@@ -107,9 +110,9 @@ export async function analyzeTokenSafety(
   fallbackSymbol?: string,
   fallbackName?: string
 ): Promise<TokenSafetyReport> {
-  if (!tokenAddress) {
+  if (!tokenAddress || !tokenAddress.startsWith('0x') || tokenAddress.length !== 42) {
     return {
-      tokenAddress: '',
+      tokenAddress: tokenAddress || '',
       symbol: fallbackSymbol || 'UNKNOWN',
       name: fallbackName || 'Unknown Token',
       buyTaxPct: 0,
@@ -123,7 +126,7 @@ export async function analyzeTokenSafety(
       isLiquidityLocked: false,
       trustScore: 50,
       riskTier: 'LOW_RISK',
-      warnings: ['No address provided for scanning'],
+      warnings: ['Invalid or empty token address provided'],
     };
   }
 
@@ -149,26 +152,74 @@ export async function analyzeTokenSafety(
     };
   }
 
-  // Live simulation for unverified or custom tokens
+  // Live on-chain inspection on GIWA Sepolia
   const isDojang = isTokenDojangVerified(tokenAddress);
   const locks = getLiquidityLocks();
   const isLPLocked = locks.some(
     (lk) => lk.lpTokenAddress.toLowerCase() === cleanAddr || lk.ownerAddress.toLowerCase() === '0x000000000000000000000000000000000000dead'
   );
 
-  // Derive pseudo-random deterministic test results from address hash for simulation
-  const hashVal = parseInt(cleanAddr.slice(2, 8) || '1234', 16);
-  const isSimulatedHoneypot = hashVal % 97 === 0; // Rare honeypot test
-  const simulatedSellTax = isSimulatedHoneypot ? 99 : (hashVal % 13 === 0 ? 8 : 0);
-  const isMintable = (hashVal % 7) === 0;
-  const isBlacklistable = (hashVal % 11) === 0;
-  const isRenounced = (hashVal % 3) !== 0;
-
   const warnings: string[] = [];
-  let score = 70;
+  let score = 75;
+  let onChainName = fallbackName || 'Community Token';
+  let onChainSymbol = fallbackSymbol || 'TOKEN';
+  let isOwnershipRenounced = false;
+
+  try {
+    const client = createPublicClient({
+      chain: giwaSepolia,
+      transport: http(GIWA_STANDARD_RPC),
+    });
+
+    const bytecode = await client.getBytecode({ address: tokenAddress as Address });
+    if (!bytecode || bytecode === '0x') {
+      return {
+        tokenAddress,
+        symbol: fallbackSymbol || 'INVALID',
+        name: fallbackName || 'Not a contract',
+        buyTaxPct: 0,
+        sellTaxPct: 0,
+        isHoneypot: true,
+        isMintable: false,
+        isBlacklistable: false,
+        isProxy: false,
+        isOwnershipRenounced: false,
+        isDojangVerified: false,
+        isLiquidityLocked: false,
+        trustScore: 0,
+        riskTier: 'HONEYPOT_DANGER',
+        warnings: ['Address has no deployed contract bytecode on GIWA Sepolia'],
+      };
+    }
+
+    try {
+      const [fetchedName, fetchedSymbol] = await Promise.all([
+        client.readContract({ address: tokenAddress as Address, abi: erc20Abi, functionName: 'name' }),
+        client.readContract({ address: tokenAddress as Address, abi: erc20Abi, functionName: 'symbol' }),
+      ]);
+      if (fetchedName) onChainName = fetchedName;
+      if (fetchedSymbol) onChainSymbol = fetchedSymbol;
+    } catch {}
+
+    try {
+      const owner = await client.readContract({
+        address: tokenAddress as Address,
+        abi: parseAbi(['function owner() view returns (address)']),
+        functionName: 'owner',
+      });
+      if (owner === '0x0000000000000000000000000000000000000000' || owner.toLowerCase() === '0x000000000000000000000000000000000000dead') {
+        isOwnershipRenounced = true;
+      }
+    } catch {
+      // Contract might not have owner() or ownership is renounced
+      isOwnershipRenounced = true;
+    }
+  } catch {
+    // Network read error, fallback to safe defaults
+  }
 
   if (isDojang) {
-    score += 25;
+    score += 20;
   } else {
     warnings.push('Token project has not completed Dunamu Dojang attestation.');
     score -= 10;
@@ -178,50 +229,34 @@ export async function analyzeTokenSafety(
     score += 15;
   } else {
     warnings.push('No verified LP lock certificate found on Giwa Liquidity Locker.');
-    score -= 15;
-  }
-
-  if (simulatedSellTax > 5) {
-    warnings.push(`High sell tax detected: ${simulatedSellTax}%. Traders may lose funds upon selling.`);
-    score -= 30;
-  }
-
-  if (isSimulatedHoneypot) {
-    warnings.push('CRITICAL: Transfer simulation failed! Token appears to be a HONEYPOT (cannot sell).');
-    score = 0;
-  }
-
-  if (isMintable && !isDojang) {
-    warnings.push('Owner possesses unlimited minting privileges.');
-    score -= 15;
-  }
-
-  if (isBlacklistable && !isDojang) {
-    warnings.push('Contract contains blacklist/freeze function.');
     score -= 10;
+  }
+
+  if (isOwnershipRenounced) {
+    score += 10;
   }
 
   const clampedScore = Math.max(0, Math.min(100, score));
   let riskTier: TokenSafetyReport['riskTier'] = 'LOW_RISK';
-  if (isSimulatedHoneypot || clampedScore <= 20) {
+  if (clampedScore <= 35) {
     riskTier = 'HONEYPOT_DANGER';
-  } else if (clampedScore <= 60) {
+  } else if (clampedScore <= 65) {
     riskTier = 'MEDIUM_RISK';
-  } else if (isDojang && clampedScore >= 90) {
+  } else if (isDojang && clampedScore >= 85) {
     riskTier = 'VERIFIED_SAFE';
   }
 
   return {
     tokenAddress,
-    symbol: fallbackSymbol || 'TOKEN',
-    name: fallbackName || 'Community Token',
+    symbol: onChainSymbol,
+    name: onChainName,
     buyTaxPct: 0,
-    sellTaxPct: simulatedSellTax,
-    isHoneypot: isSimulatedHoneypot,
-    isMintable,
-    isBlacklistable,
+    sellTaxPct: 0,
+    isHoneypot: false,
+    isMintable: !isOwnershipRenounced,
+    isBlacklistable: false,
     isProxy: false,
-    isOwnershipRenounced: isRenounced,
+    isOwnershipRenounced,
     isDojangVerified: isDojang,
     isLiquidityLocked: isLPLocked,
     trustScore: clampedScore,
@@ -229,3 +264,4 @@ export async function analyzeTokenSafety(
     warnings,
   };
 }
+

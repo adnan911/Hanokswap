@@ -173,25 +173,25 @@ export function KoreanTaxModal({ isOpen, onClose, userAddress }: Props) {
             <div style={{ fontSize: 11, color: 'var(--muted-foreground)', marginBottom: 4 }}>
               {language === 'ko' ? '총 양도소득 (차익)' : 'Net Capital Gain'}
             </div>
-            <div style={{ fontSize: 18, fontWeight: 800, color: summary.netCapitalGainKRW >= 0 ? '#22c55e' : '#ef4444', display: 'flex', alignItems: 'center', gap: 4 }}>
+            <div style={{ fontSize: 18, fontWeight: 800, color: summary.netCapitalGainKRW > 0 ? '#22c55e' : 'var(--foreground)', display: 'flex', alignItems: 'center', gap: 4 }}>
               <TrendingUp size={16} />
               ₩{summary.netCapitalGainKRW.toLocaleString()}
             </div>
             <div style={{ fontSize: 10, color: 'var(--muted-foreground)', marginTop: 4 }}>
-              {summary.totalTransactions}건 거래 완료
+              {summary.totalTransactions}건 거래 기록
             </div>
           </div>
 
-          <div style={{ padding: 14, borderRadius: 14, background: 'rgba(239, 68, 68, 0.08)', border: '1px solid rgba(239, 68, 68, 0.2)' }}>
-            <div style={{ fontSize: 11, color: '#ef4444', fontWeight: 600, marginBottom: 4 }}>
+          <div style={{ padding: 14, borderRadius: 14, background: summary.totalEstimatedTaxKRW > 0 ? 'rgba(239, 68, 68, 0.08)' : 'var(--muted)', border: summary.totalEstimatedTaxKRW > 0 ? '1px solid rgba(239, 68, 68, 0.2)' : '1px solid var(--border)' }}>
+            <div style={{ fontSize: 11, color: summary.totalEstimatedTaxKRW > 0 ? '#ef4444' : 'var(--muted-foreground)', fontWeight: 600, marginBottom: 4 }}>
               {language === 'ko' ? '예상 총 납부세액 (22%)' : 'Estimated Tax Due (22%)'}
             </div>
-            <div style={{ fontSize: 18, fontWeight: 800, color: '#ef4444', display: 'flex', alignItems: 'center', gap: 4 }}>
+            <div style={{ fontSize: 18, fontWeight: 800, color: summary.totalEstimatedTaxKRW > 0 ? '#ef4444' : 'var(--foreground)', display: 'flex', alignItems: 'center', gap: 4 }}>
               <DollarSign size={16} />
               ₩{summary.totalEstimatedTaxKRW.toLocaleString()}
             </div>
             <div style={{ fontSize: 10, color: 'var(--muted-foreground)', marginTop: 4 }}>
-              소득세 20% + 지방세 2%
+              {summary.totalEstimatedTaxKRW > 0 ? '소득세 20% + 지방세 2%' : '과세표준 이하 (비과세)'}
             </div>
           </div>
         </div>
@@ -212,37 +212,39 @@ export function KoreanTaxModal({ isOpen, onClose, userAddress }: Props) {
           </div>
           <div style={{ display: 'flex', justifyContent: 'space-between', color: 'var(--muted-foreground)', borderTop: '1px solid var(--border)', paddingTop: 6 }}>
             <span>{language === 'ko' ? '기본공제액 적용' : 'Basic Exemption'}</span>
-            <span style={{ fontWeight: 700, color: '#3b82f6' }}>-₩{Math.min(summary.netCapitalGainKRW, summary.basicExemptionKRW).toLocaleString()}</span>
+            <span style={{ fontWeight: 700, color: '#3b82f6' }}>-₩{Math.min(Math.max(0, summary.netCapitalGainKRW), summary.basicExemptionKRW).toLocaleString()}</span>
           </div>
           <div style={{ display: 'flex', justifyContent: 'space-between', color: 'var(--foreground)', fontWeight: 800, fontSize: 13 }}>
             <span>{language === 'ko' ? '최종 과세표준' : 'Final Taxable Base'}</span>
-            <span style={{ color: 'var(--primary)' }}>₩{summary.taxableBaseKRW.toLocaleString()}</span>
+            <span style={{ color: summary.taxableBaseKRW > 0 ? 'var(--primary)' : 'var(--foreground)' }}>₩{summary.taxableBaseKRW.toLocaleString()}</span>
           </div>
         </div>
 
         {/* NTS Excel Download Button */}
         <button
           onClick={handleDownload}
+          disabled={transactions.length === 0}
           style={{
             width: '100%',
             padding: '14px 20px',
             borderRadius: 14,
-            background: 'var(--primary)',
-            color: '#fff',
+            background: transactions.length === 0 ? 'var(--secondary)' : 'var(--primary)',
+            color: transactions.length === 0 ? 'var(--muted-foreground)' : '#fff',
             border: 'none',
             fontSize: 14,
             fontWeight: 800,
-            cursor: 'pointer',
+            cursor: transactions.length === 0 ? 'not-allowed' : 'pointer',
             display: 'flex',
             alignItems: 'center',
             justifyContent: 'center',
             gap: 8,
-            boxShadow: '0 8px 24px rgba(0,0,0,0.15)',
+            boxShadow: transactions.length === 0 ? 'none' : '0 8px 24px rgba(0,0,0,0.15)',
             marginBottom: 12,
+            opacity: transactions.length === 0 ? 0.6 : 1,
           }}
         >
           <Download size={18} />
-          <span>{language === 'ko' ? '국세청 홈택스 제출용 CSV 다운로드 (UTF-8 BOM)' : 'Download NTS Hometax CSV (Excel Ready)'}</span>
+          <span>{transactions.length === 0 ? (language === 'ko' ? '신고 대상 거래 내역 없음' : 'No Transactions Recorded') : (language === 'ko' ? '국세청 홈택스 제출용 CSV 다운로드 (UTF-8 BOM)' : 'Download NTS Hometax CSV (Excel Ready)')}</span>
         </button>
 
         {/* Notice */}

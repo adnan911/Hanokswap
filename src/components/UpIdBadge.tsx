@@ -1,6 +1,6 @@
 import React from "react";
 import { ShieldCheck, Sparkles, Award } from "lucide-react";
-import { type UserDojangProfile } from "../lib/dojang";
+import { type UserDojangProfile, formatUpIdDisplay } from "../lib/dojang";
 
 interface UpIdBadgeProps {
   profile: UserDojangProfile;
@@ -65,7 +65,7 @@ export const UpIdBadge: React.FC<UpIdBadgeProps> = ({ profile, onClick, showDisc
       )}
 
       <span style={{ letterSpacing: "-0.01em" }}>
-        {profile.upIdName ? `${profile.upIdName}.up.id` : "Claim up.id"}
+        {profile.upIdName ? formatUpIdDisplay(profile.upIdName) : "Claim up.id"}
       </span>
 
       {showDiscount && profile.feeDiscountPercent > 0 && (

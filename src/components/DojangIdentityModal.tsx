@@ -9,8 +9,10 @@ import {
   X,
   Zap,
   Sparkles,
+  Info,
 } from "lucide-react";
 import { useDojang } from "../hooks/useDojang";
+import { formatUpIdDisplay } from "../lib/dojang";
 import { GIWA_DOJANG_SCROLL } from "../contracts";
 
 interface DojangIdentityModalProps {
@@ -31,17 +33,22 @@ export const DojangIdentityModal: React.FC<DojangIdentityModalProps> = ({
   const [error, setError] = useState<string | null>(null);
   const [copied, setCopied] = useState(false);
   const [copiedContract, setCopiedContract] = useState(false);
+  const [activeInfo, setActiveInfo] = useState<string | null>(null);
 
   if (!isOpen) return null;
 
   const handleClaim = async (e: React.FormEvent) => {
     e.preventDefault();
     setError(null);
-    if (!nameInput.trim()) return;
+    let cleaned = nameInput.trim().toLowerCase();
+    while (cleaned.endsWith(".up.id")) {
+      cleaned = cleaned.slice(0, -6);
+    }
+    if (!cleaned) return;
 
     setClaiming(true);
     try {
-      const res = await claimUpId(nameInput.trim());
+      const res = await claimUpId(cleaned);
       if (!res.success) {
         setError(res.error || "Failed to register up.id");
       } else {
@@ -87,9 +94,9 @@ export const DojangIdentityModal: React.FC<DojangIdentityModalProps> = ({
         position: "fixed",
         inset: 0,
         zIndex: 1000,
-        backgroundColor: "rgba(10, 11, 16, 0.78)",
-        backdropFilter: "blur(14px)",
-        WebkitBackdropFilter: "blur(14px)",
+        backgroundColor: "rgba(8, 11, 17, 0.82)",
+        backdropFilter: "blur(20px)",
+        WebkitBackdropFilter: "blur(20px)",
         display: "flex",
         alignItems: "center",
         justifyContent: "center",
@@ -98,17 +105,13 @@ export const DojangIdentityModal: React.FC<DojangIdentityModalProps> = ({
     >
       <div
         onClick={(e) => e.stopPropagation()}
+        className="uniswap-card"
         style={{
           position: "relative",
           width: "100%",
-          maxWidth: "540px",
-          background: "var(--card, #1c1e26)",
-          border: "1px solid var(--border, rgba(255, 255, 255, 0.12))",
-          borderRadius: "22px",
-          boxShadow: "0 28px 64px rgba(0, 0, 0, 0.55), 0 0 0 1px rgba(255, 255, 255, 0.05)",
-          padding: "24px 26px",
-          maxHeight: "92vh",
-          overflowY: "auto",
+          maxWidth: "460px",
+          padding: "22px 24px",
+          borderRadius: "24px",
           color: "var(--foreground, #ffffff)",
           fontFamily: "var(--font-sans, inherit)",
         }}
@@ -119,69 +122,46 @@ export const DojangIdentityModal: React.FC<DojangIdentityModalProps> = ({
             display: "flex",
             alignItems: "center",
             justifyContent: "space-between",
-            paddingBottom: "18px",
-            borderBottom: "1px solid var(--border, rgba(255, 255, 255, 0.08))",
+            paddingBottom: "16px",
+            borderBottom: "1px solid var(--border)",
           }}
         >
-          <div style={{ display: "flex", alignItems: "center", gap: "14px" }}>
-            {/* Traditional Hanok Dojang Seal Motif */}
+          <div style={{ display: "flex", alignItems: "center", gap: "10px" }}>
             <div
               style={{
-                width: "44px",
-                height: "44px",
-                borderRadius: "12px",
-                background: "linear-gradient(135deg, #e11d48 0%, #ea580c 50%, var(--primary, #f97316) 100%)",
+                width: "36px",
+                height: "36px",
+                borderRadius: "10px",
+                background: "linear-gradient(135deg, #e11d48 0%, #ea580c 50%, var(--primary, #ff5a36) 100%)",
                 display: "flex",
                 alignItems: "center",
                 justifyContent: "center",
-                boxShadow: "0 6px 18px rgba(234, 88, 12, 0.35)",
                 color: "#ffffff",
                 fontWeight: 900,
-                fontSize: "20px",
-                userSelect: "none",
+                fontSize: "17px",
                 flexShrink: 0,
               }}
             >
               印
             </div>
             <div>
-              <div style={{ display: "flex", alignItems: "center", gap: "8px" }}>
-                <h2
-                  style={{
-                    margin: 0,
-                    fontSize: "19px",
-                    fontWeight: 800,
-                    letterSpacing: "-0.02em",
-                    color: "var(--foreground, #ffffff)",
-                  }}
-                >
-                  Dojang Identity & up.id
+              <div style={{ display: "flex", alignItems: "center", gap: "6px" }}>
+                <h2 style={{ margin: 0, fontSize: "17px", fontWeight: 800, letterSpacing: "-0.01em" }}>
+                  Dojang & up.id
                 </h2>
                 <span
                   style={{
-                    fontSize: "11px",
+                    fontSize: "10.5px",
                     fontWeight: 800,
-                    padding: "2px 8px",
-                    borderRadius: "20px",
-                    background: "rgba(234, 88, 12, 0.15)",
-                    border: "1px solid rgba(234, 88, 12, 0.4)",
-                    color: "var(--primary, #fb923c)",
-                    letterSpacing: "0.03em",
+                    padding: "2px 7px",
+                    borderRadius: "999px",
+                    background: "var(--accent)",
+                    color: "var(--primary)",
                   }}
                 >
-                  EAS Native
+                  EAS
                 </span>
               </div>
-              <p
-                style={{
-                  margin: "4px 0 0 0",
-                  fontSize: "12.5px",
-                  color: "var(--muted-foreground, #a1a1aa)",
-                  fontWeight: 500,
-                }}
-              >
-                Dunamu on-chain attestation engine & Web3 name service
-              </p>
             </div>
           </div>
 
@@ -189,27 +169,19 @@ export const DojangIdentityModal: React.FC<DojangIdentityModalProps> = ({
             onClick={onClose}
             aria-label="Close"
             style={{
-              background: "var(--muted, rgba(255, 255, 255, 0.06))",
-              border: "1px solid var(--border, rgba(255, 255, 255, 0.08))",
-              borderRadius: "10px",
-              padding: "7px",
-              color: "var(--muted-foreground, rgba(255, 255, 255, 0.6))",
+              background: "var(--secondary)",
+              border: "1px solid var(--border)",
+              borderRadius: "50%",
+              width: "32px",
+              height: "32px",
+              color: "var(--muted-foreground)",
               cursor: "pointer",
               display: "flex",
               alignItems: "center",
               justifyContent: "center",
-              transition: "all 0.2s ease",
-            }}
-            onMouseEnter={(e) => {
-              e.currentTarget.style.color = "var(--foreground, #ffffff)";
-              e.currentTarget.style.background = "var(--border, rgba(255, 255, 255, 0.12))";
-            }}
-            onMouseLeave={(e) => {
-              e.currentTarget.style.color = "var(--muted-foreground, rgba(255, 255, 255, 0.6))";
-              e.currentTarget.style.background = "var(--muted, rgba(255, 255, 255, 0.06))";
             }}
           >
-            <X size={18} />
+            <X size={15} />
           </button>
         </div>
 
@@ -217,14 +189,13 @@ export const DojangIdentityModal: React.FC<DojangIdentityModalProps> = ({
         {error && (
           <div
             style={{
-              marginTop: "16px",
-              padding: "11px 14px",
+              marginTop: "12px",
+              padding: "10px 12px",
               borderRadius: "12px",
               background: "rgba(239, 68, 68, 0.12)",
-              border: "1px solid rgba(239, 68, 68, 0.35)",
-              color: "#fca5a5",
-              fontSize: "12.5px",
-              lineHeight: 1.4,
+              border: "1px solid rgba(239, 68, 68, 0.3)",
+              color: "#ef4444",
+              fontSize: "12px",
               fontWeight: 600,
             }}
           >
@@ -232,516 +203,312 @@ export const DojangIdentityModal: React.FC<DojangIdentityModalProps> = ({
           </div>
         )}
 
-        {/* User Profile Card */}
+        {/* Info Popover Modal / Bubble */}
+        {activeInfo && (
+          <div
+            style={{
+              marginTop: "12px",
+              padding: "10px 14px",
+              borderRadius: "12px",
+              background: "var(--secondary)",
+              border: "1px solid var(--primary)",
+              color: "var(--foreground)",
+              fontSize: "12px",
+              lineHeight: 1.4,
+              display: "flex",
+              alignItems: "center",
+              justifyContent: "space-between",
+              gap: 8,
+            }}
+          >
+            <span>{activeInfo}</span>
+            <button
+              onClick={() => setActiveInfo(null)}
+              style={{ background: "none", border: "none", color: "var(--muted-foreground)", cursor: "pointer" }}
+            >
+              <X size={13} />
+            </button>
+          </div>
+        )}
+
+        {/* Identity Status Card */}
         <div
           style={{
-            marginTop: "18px",
-            padding: "16px 18px",
+            marginTop: "16px",
+            padding: "14px 16px",
             borderRadius: "16px",
-            background: "var(--muted, #14151b)",
-            border: "1px solid var(--border, rgba(255, 255, 255, 0.08))",
+            background: "var(--input)",
+            border: "1px solid var(--border)",
             display: "flex",
             flexDirection: "column",
-            gap: "14px",
+            gap: "12px",
           }}
         >
-          {/* Row 1: Connected Wallet */}
+          {/* Row 1: Wallet & Handle */}
           <div style={{ display: "flex", alignItems: "center", justifyContent: "space-between" }}>
-            <span
-              style={{
-                fontSize: "11px",
-                fontWeight: 800,
-                color: "var(--muted-foreground, #a1a1aa)",
-                textTransform: "uppercase",
-                letterSpacing: "0.06em",
-              }}
-            >
-              Connected Wallet
-            </span>
+            <div>
+              <span style={{ fontSize: "11px", fontWeight: 700, color: "var(--muted-foreground)", textTransform: "uppercase" }}>
+                Identity Handle
+              </span>
+              <div style={{ display: "flex", alignItems: "center", gap: "6px", marginTop: "2px" }}>
+                {profile.upIdName ? (
+                  <>
+                    <span style={{ fontSize: "15px", fontWeight: 800, color: "var(--primary)" }}>
+                      {formatUpIdDisplay(profile.upIdName)}
+                    </span>
+                    <CheckCircle2 size={15} style={{ color: "#22c55e" }} />
+                  </>
+                ) : (
+                  <span style={{ fontSize: "13px", color: "var(--muted-foreground)" }}>
+                    No up.id handle
+                  </span>
+                )}
+              </div>
+            </div>
+
             <button
               onClick={copyAddress}
               disabled={!address}
               style={{
                 display: "inline-flex",
                 alignItems: "center",
-                gap: "6px",
-                background: "rgba(255, 255, 255, 0.04)",
-                border: "1px solid var(--border, rgba(255, 255, 255, 0.1))",
-                color: "var(--primary, #fb923c)",
+                gap: "5px",
+                background: "var(--secondary)",
+                border: "1px solid var(--border)",
+                color: "var(--foreground)",
                 fontSize: "12px",
-                fontWeight: 700,
+                fontWeight: 600,
                 cursor: address ? "pointer" : "default",
-                padding: "4px 10px",
+                padding: "4px 9px",
                 borderRadius: "8px",
-                transition: "all 0.2s ease",
-              }}
-              onMouseEnter={(e) => {
-                if (address) e.currentTarget.style.background = "rgba(255, 255, 255, 0.08)";
-              }}
-              onMouseLeave={(e) => {
-                if (address) e.currentTarget.style.background = "rgba(255, 255, 255, 0.04)";
               }}
             >
-              {copied ? <Check size={13} style={{ color: "#22c55e" }} /> : <Copy size={13} />}
-              <span>
-                {address ? `${address.slice(0, 6)}...${address.slice(-4)}` : "Not connected"}
-              </span>
-              {copied && <span style={{ color: "#22c55e", fontSize: "11px", fontWeight: 800 }}>Copied!</span>}
+              {copied ? <Check size={12} style={{ color: "#22c55e" }} /> : <Copy size={12} />}
+              <span>{address ? `${address.slice(0, 6)}...${address.slice(-4)}` : "Disconnected"}</span>
             </button>
           </div>
 
-          <div style={{ height: "1px", background: "var(--border, rgba(255, 255, 255, 0.06))" }} />
-
-          {/* Row 2: Name & Fee Discount */}
-          <div style={{ display: "flex", alignItems: "center", justifyContent: "space-between" }}>
+          {/* Row 2: Fee Discount */}
+          <div style={{ display: "flex", alignItems: "center", justifyContent: "space-between", paddingTop: "8px", borderTop: "1px solid var(--border)" }}>
+            <span style={{ fontSize: "12px", color: "var(--muted-foreground)", fontWeight: 600 }}>
+              DEX Fee Discount
+            </span>
             <div>
-              <span
-                style={{
-                  fontSize: "11px",
-                  color: "var(--muted-foreground, #a1a1aa)",
-                  fontWeight: 700,
-                  textTransform: "uppercase",
-                  letterSpacing: "0.04em",
-                }}
-              >
-                Primary up.id Handle
-              </span>
-              <div style={{ display: "flex", alignItems: "center", gap: "6px", marginTop: "4px" }}>
-                {profile.upIdName ? (
-                  <>
-                    <span
-                      style={{
-                        fontSize: "15px",
-                        fontWeight: 800,
-                        color: "var(--primary, #fb923c)",
-                      }}
-                    >
-                      {profile.upIdName}.up.id
-                    </span>
-                    <CheckCircle2 size={16} style={{ color: "#22c55e" }} />
-                  </>
-                ) : (
-                  <span
-                    style={{
-                      fontSize: "13px",
-                      color: "var(--muted-foreground, rgba(255, 255, 255, 0.45))",
-                      fontStyle: "italic",
-                    }}
-                  >
-                    No up.id registered yet
-                  </span>
-                )}
-              </div>
-            </div>
-
-            <div style={{ textAlign: "right" }}>
-              <span
-                style={{
-                  fontSize: "11px",
-                  color: "var(--muted-foreground, #a1a1aa)",
-                  fontWeight: 700,
-                  textTransform: "uppercase",
-                  letterSpacing: "0.04em",
-                }}
-              >
-                Fee Rebate Status
-              </span>
-              <div style={{ marginTop: "4px" }}>
-                {profile.feeDiscountPercent > 0 ? (
-                  <span
-                    style={{
-                      display: "inline-flex",
-                      alignItems: "center",
-                      gap: "4px",
-                      fontSize: "11.5px",
-                      fontWeight: 800,
-                      padding: "3px 9px",
-                      borderRadius: "6px",
-                      background: profile.isVIPTrader ? "rgba(245, 158, 11, 0.2)" : "rgba(34, 197, 94, 0.2)",
-                      border: profile.isVIPTrader ? "1px solid rgba(245, 158, 11, 0.45)" : "1px solid rgba(34, 197, 94, 0.45)",
-                      color: profile.isVIPTrader ? "#fcd34d" : "#4ade80",
-                    }}
-                  >
-                    <Zap size={11} /> -{profile.feeDiscountPercent}% Active
-                  </span>
-                ) : (
-                  <span style={{ fontSize: "13px", color: "var(--muted-foreground, #a1a1aa)", fontWeight: 600 }}>
-                    Standard 0%
-                  </span>
-                )}
-              </div>
+              {profile.feeDiscountPercent > 0 ? (
+                <span
+                  style={{
+                    display: "inline-flex",
+                    alignItems: "center",
+                    gap: "4px",
+                    fontSize: "11.5px",
+                    fontWeight: 800,
+                    padding: "2px 8px",
+                    borderRadius: "6px",
+                    background: profile.isVIPTrader ? "rgba(245, 158, 11, 0.15)" : "rgba(34, 197, 94, 0.15)",
+                    border: profile.isVIPTrader ? "1px solid rgba(245, 158, 11, 0.4)" : "1px solid rgba(34, 197, 94, 0.4)",
+                    color: profile.isVIPTrader ? "#f59e0b" : "#22c55e",
+                  }}
+                >
+                  <Zap size={11} /> -{profile.feeDiscountPercent}% Fee
+                </span>
+              ) : (
+                <span style={{ fontSize: "12px", color: "var(--muted-foreground)", fontWeight: 600 }}>
+                  0% (Standard)
+                </span>
+              )}
             </div>
           </div>
         </div>
 
-        {/* Claim / Register up.id Form */}
-        <div style={{ marginTop: "20px" }}>
-          <label
-            style={{
-              display: "block",
-              fontSize: "13px",
-              fontWeight: 800,
-              color: "var(--foreground, #ffffff)",
-              marginBottom: "8px",
-            }}
-          >
-            {profile.upIdName ? "Register Additional / Switch up.id" : "Claim Your Free up.id Handle"}
-          </label>
+        {/* Claim Input Form */}
+        <div style={{ marginTop: "16px" }}>
           <form onSubmit={handleClaim} style={{ display: "flex", gap: "8px" }}>
             <div style={{ position: "relative", flex: 1 }}>
               <input
                 type="text"
                 value={nameInput}
-                onChange={(e) => setNameInput(e.target.value)}
-                placeholder="e.g. satoshi or your_name"
+                onChange={(e) => setNameInput(e.target.value.replace(/[^a-z0-9-_]/gi, ""))}
+                placeholder="satoshi or your_name"
                 disabled={claiming || !address}
                 style={{
                   width: "100%",
                   boxSizing: "border-box",
-                  background: "var(--muted, #14151b)",
-                  border: "1px solid var(--border, rgba(255, 255, 255, 0.12))",
+                  background: "var(--input)",
+                  border: "1px solid var(--border)",
                   borderRadius: "14px",
-                  padding: "12px 68px 12px 14px",
-                  color: "var(--foreground, #ffffff)",
+                  padding: "10px 60px 10px 12px",
+                  color: "var(--foreground)",
                   fontSize: "13.5px",
                   outline: "none",
-                  transition: "all 0.2s ease",
-                }}
-                onFocus={(e) => {
-                  e.currentTarget.style.borderColor = "var(--primary, #f97316)";
-                  e.currentTarget.style.boxShadow = "0 0 0 2px rgba(234, 88, 12, 0.2)";
-                }}
-                onBlur={(e) => {
-                  e.currentTarget.style.borderColor = "var(--border, rgba(255, 255, 255, 0.12))";
-                  e.currentTarget.style.boxShadow = "none";
                 }}
               />
               <span
                 style={{
                   position: "absolute",
-                  right: "14px",
+                  right: "12px",
                   top: "50%",
                   transform: "translateY(-50%)",
-                  fontSize: "13px",
-                  fontWeight: 800,
-                  color: "var(--muted-foreground, #71717a)",
-                  userSelect: "none",
+                  fontSize: "12.5px",
+                  fontWeight: 700,
+                  color: "var(--muted-foreground)",
                   pointerEvents: "none",
                 }}
               >
                 .up.id
               </span>
             </div>
+
             <button
               type="submit"
               disabled={claiming || !address || !nameInput.trim()}
+              className="uniswap-btn-primary"
               style={{
-                display: "inline-flex",
-                alignItems: "center",
-                gap: "6px",
-                padding: "12px 20px",
-                borderRadius: "14px",
-                background: "var(--primary, #f97316)",
-                border: "none",
-                color: "#ffffff",
-                fontSize: "13.5px",
+                width: "auto",
+                padding: "0 18px",
+                fontSize: "13px",
                 fontWeight: 800,
+                borderRadius: "14px",
                 cursor: (claiming || !address || !nameInput.trim()) ? "not-allowed" : "pointer",
                 opacity: (claiming || !address || !nameInput.trim()) ? 0.5 : 1,
-                boxShadow: "0 6px 18px oklch(0.6724 0.1308 38.7559 / 0.35)",
-                transition: "all 0.2s ease",
-                whiteSpace: "nowrap",
+                display: "inline-flex",
+                alignItems: "center",
+                gap: 5,
               }}
             >
-              <Sparkles size={14} />
-              {claiming ? "Claiming..." : "Claim"}
+              <Sparkles size={13} />
+              <span>{claiming ? "Claiming..." : "Claim"}</span>
             </button>
           </form>
         </div>
 
-        {/* Dojang Attestation Records */}
-        <div style={{ marginTop: "24px", display: "flex", flexDirection: "column", gap: "10px" }}>
+        {/* Attestations / Verification Tiers */}
+        <div style={{ marginTop: "18px", display: "flex", flexDirection: "column", gap: "8px" }}>
           <div style={{ display: "flex", alignItems: "center", justifyContent: "space-between" }}>
-            <span
-              style={{
-                fontSize: "11.5px",
-                fontWeight: 800,
-                color: "var(--muted-foreground, #a1a1aa)",
-                textTransform: "uppercase",
-                letterSpacing: "0.06em",
-              }}
-            >
-              Dojang EAS Attestation Records
-            </span>
-            <span
-              style={{
-                fontSize: "11.5px",
-                color: "var(--primary, #fb923c)",
-                fontWeight: 700,
-              }}
-            >
-              Dynamic Gas & Fee Rebates
+            <span style={{ fontSize: "11px", fontWeight: 800, color: "var(--muted-foreground)", textTransform: "uppercase" }}>
+              Attestation Badges
             </span>
           </div>
 
-          {/* Attestation 1: Upbit KYC */}
+          {/* Upbit KYC Item */}
           <div
             style={{
-              padding: "15px 16px",
-              borderRadius: "15px",
-              background: profile.isKYCVerified
-                ? "rgba(59, 130, 246, 0.08)"
-                : "var(--muted, #14151b)",
-              border: profile.isKYCVerified
-                ? "1px solid rgba(59, 130, 246, 0.4)"
-                : "1px solid var(--border, rgba(255, 255, 255, 0.08))",
+              padding: "10px 14px",
+              borderRadius: "14px",
+              background: profile.isKYCVerified ? "rgba(59, 130, 246, 0.08)" : "var(--input)",
+              border: profile.isKYCVerified ? "1px solid rgba(59, 130, 246, 0.4)" : "1px solid var(--border)",
               display: "flex",
               alignItems: "center",
               justifyContent: "space-between",
-              gap: "14px",
-              transition: "all 0.2s ease",
             }}
           >
-            <div style={{ display: "flex", alignItems: "flex-start", gap: "12px", flex: 1 }}>
-              <div
-                style={{
-                  width: "38px",
-                  height: "38px",
-                  borderRadius: "10px",
-                  background: profile.isKYCVerified ? "rgba(59, 130, 246, 0.2)" : "rgba(255, 255, 255, 0.05)",
-                  color: profile.isKYCVerified ? "#60a5fa" : "var(--muted-foreground, #71717a)",
-                  display: "flex",
-                  alignItems: "center",
-                  justifyContent: "center",
-                  flexShrink: 0,
-                }}
-              >
-                <ShieldCheck size={20} />
-              </div>
+            <div style={{ display: "flex", alignItems: "center", gap: "8px" }}>
+              <ShieldCheck size={16} color={profile.isKYCVerified ? "#3b82f6" : "var(--muted-foreground)"} />
               <div>
-                <div style={{ display: "flex", alignItems: "center", gap: "6px", flexWrap: "wrap" }}>
-                  <h4 style={{ margin: 0, fontSize: "13.5px", fontWeight: 800, color: "var(--foreground, #ffffff)" }}>
-                    Upbit KYC Level 2 Attestation
-                  </h4>
-                  {profile.isKYCVerified && (
-                    <span
-                      style={{
-                        fontSize: "9.5px",
-                        fontWeight: 800,
-                        padding: "1px 6px",
-                        borderRadius: "4px",
-                        background: "rgba(59, 130, 246, 0.25)",
-                        color: "#93c5fd",
-                      }}
-                    >
-                      VERIFIED
-                    </span>
-                  )}
+                <div style={{ display: "flex", alignItems: "center", gap: 6 }}>
+                  <span style={{ fontSize: "13px", fontWeight: 700, color: "var(--foreground)" }}>
+                    Upbit KYC Level 2
+                  </span>
+                  <button
+                    type="button"
+                    onClick={() => setActiveInfo("Upbit KYC attestation grants a 20% dynamic swap fee discount & access to compliance pools.")}
+                    style={{ background: "none", border: "none", color: "var(--muted-foreground)", cursor: "pointer", display: "flex", alignItems: "center", padding: 0 }}
+                    title="Details"
+                  >
+                    <Info size={12} />
+                  </button>
                 </div>
-                <p
-                  style={{
-                    margin: "3px 0 0 0",
-                    fontSize: "12px",
-                    color: "var(--muted-foreground, #a1a1aa)",
-                    lineHeight: 1.4,
-                  }}
-                >
-                  Unlocks <strong style={{ color: "#60a5fa" }}>20% dynamic swap fee discount</strong> & compliance pool access.
-                </p>
               </div>
             </div>
 
-            <div>
-              {!profile.isKYCVerified ? (
-                <button
-                  onClick={() => handleMint("UPBIT_KYC")}
-                  disabled={minting !== null || !address}
-                  style={{
-                    padding: "8px 14px",
-                    borderRadius: "10px",
-                    background: "rgba(59, 130, 246, 0.15)",
-                    border: "1px solid rgba(59, 130, 246, 0.4)",
-                    color: "#93c5fd",
-                    fontSize: "12.5px",
-                    fontWeight: 700,
-                    cursor: (minting !== null || !address) ? "not-allowed" : "pointer",
-                    transition: "all 0.2s ease",
-                    whiteSpace: "nowrap",
-                  }}
-                  onMouseEnter={(e) => {
-                    if (!e.currentTarget.disabled) e.currentTarget.style.background = "rgba(59, 130, 246, 0.28)";
-                  }}
-                  onMouseLeave={(e) => {
-                    if (!e.currentTarget.disabled) e.currentTarget.style.background = "rgba(59, 130, 246, 0.15)";
-                  }}
-                >
-                  {minting === "UPBIT_KYC" ? "Issuing..." : "Simulate KYC"}
-                </button>
-              ) : (
-                <span
-                  style={{
-                    display: "inline-flex",
-                    alignItems: "center",
-                    gap: "4px",
-                    fontSize: "12px",
-                    fontWeight: 800,
-                    color: "#22c55e",
-                    whiteSpace: "nowrap",
-                  }}
-                >
-                  <Check size={14} /> -20% Active
-                </span>
-              )}
-            </div>
+            {profile.isKYCVerified ? (
+              <span style={{ display: "flex", alignItems: "center", gap: 4, fontSize: "12px", color: "#3b82f6", fontWeight: 800 }}>
+                <Check size={13} /> Active
+              </span>
+            ) : (
+              <button
+                onClick={() => handleMint("UPBIT_KYC")}
+                disabled={minting !== null || !address}
+                style={{
+                  padding: "6px 12px",
+                  borderRadius: "8px",
+                  border: "1px solid var(--border)",
+                  background: "var(--secondary)",
+                  color: "var(--foreground)",
+                  fontSize: "11.5px",
+                  fontWeight: 700,
+                  cursor: minting !== null || !address ? "not-allowed" : "pointer",
+                }}
+              >
+                {minting === "UPBIT_KYC" ? "Issuing..." : "Verify KYC"}
+              </button>
+            )}
           </div>
 
-          {/* Attestation 2: Dunamu VIP Tier */}
+          {/* Dunamu VIP Item */}
           <div
             style={{
-              padding: "15px 16px",
-              borderRadius: "15px",
-              background: profile.isVIPTrader
-                ? "rgba(245, 158, 11, 0.08)"
-                : "var(--muted, #14151b)",
-              border: profile.isVIPTrader
-                ? "1px solid rgba(245, 158, 11, 0.4)"
-                : "1px solid var(--border, rgba(255, 255, 255, 0.08))",
+              padding: "10px 14px",
+              borderRadius: "14px",
+              background: profile.isVIPTrader ? "rgba(245, 158, 11, 0.08)" : "var(--input)",
+              border: profile.isVIPTrader ? "1px solid rgba(245, 158, 11, 0.4)" : "1px solid var(--border)",
               display: "flex",
               alignItems: "center",
               justifyContent: "space-between",
-              gap: "14px",
-              transition: "all 0.2s ease",
             }}
           >
-            <div style={{ display: "flex", alignItems: "flex-start", gap: "12px", flex: 1 }}>
-              <div
-                style={{
-                  width: "38px",
-                  height: "38px",
-                  borderRadius: "10px",
-                  background: profile.isVIPTrader ? "rgba(245, 158, 11, 0.2)" : "rgba(255, 255, 255, 0.05)",
-                  color: profile.isVIPTrader ? "#fbbf24" : "var(--muted-foreground, #71717a)",
-                  display: "flex",
-                  alignItems: "center",
-                  justifyContent: "center",
-                  flexShrink: 0,
-                }}
-              >
-                <Award size={20} />
-              </div>
+            <div style={{ display: "flex", alignItems: "center", gap: "8px" }}>
+              <Award size={16} color={profile.isVIPTrader ? "#f59e0b" : "var(--muted-foreground)"} />
               <div>
-                <div style={{ display: "flex", alignItems: "center", gap: "6px", flexWrap: "wrap" }}>
-                  <h4 style={{ margin: 0, fontSize: "13.5px", fontWeight: 800, color: "var(--foreground, #ffffff)" }}>
-                    Dunamu VIP Institutional Tier
-                  </h4>
-                  {profile.isVIPTrader && (
-                    <span
-                      style={{
-                        fontSize: "9.5px",
-                        fontWeight: 800,
-                        padding: "1px 6px",
-                        borderRadius: "4px",
-                        background: "rgba(245, 158, 11, 0.25)",
-                        color: "#fde68a",
-                      }}
-                    >
-                      VIP ACTIVE
-                    </span>
-                  )}
+                <div style={{ display: "flex", alignItems: "center", gap: 6 }}>
+                  <span style={{ fontSize: "13px", fontWeight: 700, color: "var(--foreground)" }}>
+                    Dunamu VIP Tier
+                  </span>
+                  <button
+                    type="button"
+                    onClick={() => setActiveInfo("Dunamu VIP tier unlocks 50% max swap fee rebate and priority Flashblocks execution.")}
+                    style={{ background: "none", border: "none", color: "var(--muted-foreground)", cursor: "pointer", display: "flex", alignItems: "center", padding: 0 }}
+                    title="Details"
+                  >
+                    <Info size={12} />
+                  </button>
                 </div>
-                <p
-                  style={{
-                    margin: "3px 0 0 0",
-                    fontSize: "12px",
-                    color: "var(--muted-foreground, #a1a1aa)",
-                    lineHeight: 1.4,
-                  }}
-                >
-                  Unlocks <strong style={{ color: "#fbbf24" }}>50% maximum swap fee rebate</strong> & priority block inclusion.
-                </p>
               </div>
             </div>
 
-            <div>
-              {!profile.isVIPTrader ? (
-                <button
-                  onClick={() => handleMint("DUNAMU_VIP")}
-                  disabled={minting !== null || !address}
-                  style={{
-                    padding: "8px 14px",
-                    borderRadius: "10px",
-                    background: "rgba(245, 158, 11, 0.15)",
-                    border: "1px solid rgba(245, 158, 11, 0.45)",
-                    color: "#fde68a",
-                    fontSize: "12.5px",
-                    fontWeight: 700,
-                    cursor: (minting !== null || !address) ? "not-allowed" : "pointer",
-                    transition: "all 0.2s ease",
-                    whiteSpace: "nowrap",
-                  }}
-                  onMouseEnter={(e) => {
-                    if (!e.currentTarget.disabled) e.currentTarget.style.background = "rgba(245, 158, 11, 0.28)";
-                  }}
-                  onMouseLeave={(e) => {
-                    if (!e.currentTarget.disabled) e.currentTarget.style.background = "rgba(245, 158, 11, 0.15)";
-                  }}
-                >
-                  {minting === "DUNAMU_VIP" ? "Upgrading..." : "Simulate VIP"}
-                </button>
-              ) : (
-                <span
-                  style={{
-                    display: "inline-flex",
-                    alignItems: "center",
-                    gap: "4px",
-                    fontSize: "12px",
-                    fontWeight: 800,
-                    color: "#f59e0b",
-                    whiteSpace: "nowrap",
-                  }}
-                >
-                  <Check size={14} /> -50% Active
-                </span>
-              )}
-            </div>
+            {profile.isVIPTrader ? (
+              <span style={{ display: "flex", alignItems: "center", gap: 4, fontSize: "12px", color: "#f59e0b", fontWeight: 800 }}>
+                <Check size={13} /> Active
+              </span>
+            ) : (
+              <button
+                onClick={() => handleMint("DUNAMU_VIP")}
+                disabled={minting !== null || !address}
+                style={{
+                  padding: "6px 12px",
+                  borderRadius: "8px",
+                  border: "1px solid var(--border)",
+                  background: "var(--secondary)",
+                  color: "var(--foreground)",
+                  fontSize: "11.5px",
+                  fontWeight: 700,
+                  cursor: minting !== null || !address ? "not-allowed" : "pointer",
+                }}
+              >
+                {minting === "DUNAMU_VIP" ? "Issuing..." : "Upgrade VIP"}
+              </button>
+            )}
           </div>
         </div>
 
-        {/* Footer Info */}
-        <div
-          style={{
-            marginTop: "22px",
-            paddingTop: "16px",
-            borderTop: "1px solid var(--border, rgba(255, 255, 255, 0.08))",
-            display: "flex",
-            alignItems: "center",
-            justifyContent: "space-between",
-            fontSize: "11.5px",
-            color: "var(--muted-foreground, #a1a1aa)",
-          }}
-        >
-          <span style={{ display: "inline-flex", alignItems: "center", gap: "6px" }}>
-            <Zap size={13} style={{ color: "var(--primary, #fb923c)" }} />
-            Giwa Sepolia (Chain ID: 91342)
-          </span>
+        {/* Footer info */}
+        <div style={{ marginTop: "16px", paddingTop: "12px", borderTop: "1px solid var(--border)", display: "flex", justifyContent: "space-between", alignItems: "center", fontSize: "11px", color: "var(--muted-foreground)" }}>
+          <span>GIWA Sepolia (91342)</span>
           <button
             onClick={copyContract}
-            style={{
-              background: "transparent",
-              border: "none",
-              color: "var(--muted-foreground, #a1a1aa)",
-              fontSize: "11.5px",
-              cursor: "pointer",
-              display: "inline-flex",
-              alignItems: "center",
-              gap: "4px",
-              padding: "2px 4px",
-              borderRadius: "4px",
-            }}
-            title="Click to copy DojangScroll contract address"
+            style={{ background: "none", border: "none", color: "var(--muted-foreground)", cursor: "pointer", fontSize: "11px", display: "flex", alignItems: "center", gap: 4 }}
           >
-            <span>DojangScroll EAS Core: {GIWA_DOJANG_SCROLL.slice(0, 6)}...{GIWA_DOJANG_SCROLL.slice(-4)}</span>
-            {copiedContract ? <Check size={12} style={{ color: "#22c55e" }} /> : <Copy size={12} />}
+            <span>Dojang: {GIWA_DOJANG_SCROLL.slice(0, 6)}...{GIWA_DOJANG_SCROLL.slice(-4)}</span>
+            {copiedContract ? <Check size={11} color="#22c55e" /> : <Copy size={11} />}
           </button>
         </div>
       </div>

@@ -6,7 +6,7 @@ import {
   custom,
   http,
   formatUnits,
-  parseAbi,
+  parseUnits,
   type Address,
 } from 'viem';
 import { giwaSepolia, GIWA_FLASHBLOCKS_RPC } from '../chains';
@@ -21,26 +21,17 @@ import {
 import { showToast } from '../toast';
 import { useLanguage } from '../LanguageContext';
 import { useIsMobile } from '../useIsMobile';
-import { useDojang } from '../hooks/useDojang';
-import { isTokenDojangVerified } from '../lib/dojang';
 import { computeSmartOrderRoute, type SORRoute } from '../lib/sor';
 import { buildSwapParams, minimumSwapOutput, SWAP_ROUTER_ABI } from '../lib/swapExecution';
 import { waitForSuccess } from '../txHelpers';
 import {
-  getDEXLimitOrders,
   saveDEXLimitOrder,
-  cancelDEXLimitOrder,
-  fillDEXLimitOrder,
   type DEXLimitOrder,
 } from '../lib/limitOrders';
 import {
-  getDEXDCAStreams,
   saveDEXDCAStream,
-  cancelDEXDCAStream,
-  executeNextDCAInterval,
   type DEXDCAStream,
 } from '../lib/dca';
-import { DojangIdentityModal } from './DojangIdentityModal';
 import { TokenIcon } from './TokenIcon';
 import {
   ArrowDownUp,
@@ -50,10 +41,9 @@ import {
   ExternalLink,
   ChevronDown,
   RefreshCw,
-  ShieldCheck,
-  Award,
-  Clock,
-  Sliders,
+  Search,
+  X,
+  Droplets,
 } from 'lucide-react';
 
 interface TokenItem {
@@ -89,13 +79,6 @@ const DEFAULT_TOKENS: TokenItem[] = [
     icon: '💵',
   },
   {
-    symbol: 'KRWC',
-    name: 'Korean Won Coin (Testnet)',
-    address: KRWC_ADDRESS,
-    decimals: 6,
-    icon: '₩',
-  },
-  {
     symbol: 'EURC',
     name: 'Euro Coin (Testnet)',
     address: EURC_ADDRESS,
@@ -103,8 +86,15 @@ const DEFAULT_TOKENS: TokenItem[] = [
     icon: '💶',
   },
   {
+    symbol: 'KRWC',
+    name: 'Korean Won Coin (Testnet)',
+    address: KRWC_ADDRESS,
+    decimals: 6,
+    icon: '₩',
+  },
+  {
     symbol: 'USYC',
-    name: 'Yield-Bearing USD (Testnet)',
+    name: 'Yield USD (Testnet)',
     address: USYC_ADDRESS,
     decimals: 6,
     icon: '📈',
@@ -113,44 +103,51 @@ const DEFAULT_TOKENS: TokenItem[] = [
 
 const ERC20_ABI = [
   {
-    type: 'function',
     name: 'balanceOf',
-    inputs: [{ name: 'account', type: 'address' }],
-    outputs: [{ name: '', type: 'uint256' }],
+    type: 'function',
     stateMutability: 'view',
+    inputs: [{ name: 'account', type: 'address' }],
+    outputs: [{ type: 'uint256' }],
   },
   {
-    type: 'function',
     name: 'allowance',
+    type: 'function',
+    stateMutability: 'view',
     inputs: [
       { name: 'owner', type: 'address' },
       { name: 'spender', type: 'address' },
     ],
-    outputs: [{ name: '', type: 'uint256' }],
-    stateMutability: 'view',
+    outputs: [{ type: 'uint256' }],
   },
   {
-    type: 'function',
     name: 'approve',
+    type: 'function',
+    stateMutability: 'nonpayable',
     inputs: [
       { name: 'spender', type: 'address' },
-      { name: 'value', type: 'uint256' },
+      { name: 'amount', type: 'uint256' },
     ],
-    outputs: [{ name: '', type: 'bool' }],
+    outputs: [{ type: 'bool' }],
+  },
+  {
+    name: 'faucet',
+    type: 'function',
     stateMutability: 'nonpayable',
+    inputs: [],
+    outputs: [],
   },
 ] as const;
 
 type TradingMode = 'MARKET' | 'LIMIT' | 'DCA';
 
 interface Props {
-  provider?: EIP1193Provider;
-  address?: string;
-  onNavigateToDocs?: () => void;
+  provider: EIP1193Provider | null;
+  address: string | null;
+  onConnect?: () => void;
   onNavigateToDeployer?: () => void;
 }
 
-export default function GiwaSwap({ provider, address }: Props) {
+export default function GiwaSwap({ provider, address, onConnect }: Props) {
   const { t, language } = useLanguage();
   const isMobile = useIsMobile();
 
@@ -163,7 +160,8 @@ export default function GiwaSwap({ provider, address }: Props) {
   const [showSettings, setShowSettings] = useState(false);
   const [showFromModal, setShowFromModal] = useState(false);
   const [showToModal, setShowToModal] = useState(false);
-  const [usePermit2, setUsePermit2] = useState(false);
+  const [searchQuery, setSearchQuery] = useState('');
+  const [isClaimingFaucet, setIsClaimingFaucet] = useState(false);
 
   // Limit Order parameters
   const [limitTargetPrice, setLimitTargetPrice] = useState<string>('3150.00');
@@ -171,26 +169,18 @@ export default function GiwaSwap({ provider, address }: Props) {
 
   // DCA parameters
   const [dcaFrequency, setDcaFrequency] = useState<'HOURLY' | 'DAILY' | 'WEEKLY'>('DAILY');
-  const [dcaTotalOrders, setDcaTotalOrders] = useState<number>(10);
+  const [dcaTotalOrders] = useState<number>(10);
 
   const [fromBalance, setFromBalance] = useState<string>('0.00');
   const [toBalance, setToBalance] = useState<string>('0.00');
   const [isSwapping, setIsSwapping] = useState(false);
   const [txHash, setTxHash] = useState<string | null>(null);
-  const [showDojangModal, setShowDojangModal] = useState(false);
 
-  const [openLimitOrders, setOpenLimitOrders] = useState<DEXLimitOrder[]>([]);
-  const [activeDCAStreams, setActiveDCAStreams] = useState<DEXDCAStream[]>([]);
-
-  const { profile: dojangProfile } = useDojang(address as Address | undefined);
-
-  // Public client on Giwa Sepolia Flashblocks
   const publicClient = createPublicClient({
     chain: giwaSepolia,
     transport: http(GIWA_FLASHBLOCKS_RPC),
   });
 
-  // Calculate Smart Order Route dynamically
   const smartRoute: SORRoute = useMemo(() => {
     return computeSmartOrderRoute(
       fromToken.address,
@@ -204,26 +194,6 @@ export default function GiwaSwap({ provider, address }: Props) {
 
   const toAmount = smartRoute.expectedAmountOut;
 
-  // Refresh limit orders & DCA streams
-  const reloadOrdersAndStreams = () => {
-    if (address) {
-      setOpenLimitOrders(getDEXLimitOrders(address as Address));
-      setActiveDCAStreams(getDEXDCAStreams(address as Address));
-    }
-  };
-
-  useEffect(() => {
-    reloadOrdersAndStreams();
-    const handleOrderUpdate = () => reloadOrdersAndStreams();
-    window.addEventListener('giwa_limit_orders_updated', handleOrderUpdate);
-    window.addEventListener('giwa_dca_streams_updated', handleOrderUpdate);
-    return () => {
-      window.removeEventListener('giwa_limit_orders_updated', handleOrderUpdate);
-      window.removeEventListener('giwa_dca_streams_updated', handleOrderUpdate);
-    };
-  }, [address]);
-
-  // Load balances
   const refreshBalances = async () => {
     if (!address) return;
     try {
@@ -252,25 +222,68 @@ export default function GiwaSwap({ provider, address }: Props) {
         })) as bigint;
         setToBalance(Number(formatUnits(bal, toToken.decimals)).toFixed(2));
       }
-    } catch (e) {
-      console.error('Failed to load balances:', e);
+    } catch {
+      // ignore
     }
   };
 
   useEffect(() => {
     refreshBalances();
+    const interval = setInterval(refreshBalances, 10000);
+    return () => clearInterval(interval);
   }, [address, fromToken, toToken]);
 
   const handleSwapTokens = () => {
     const temp = fromToken;
     setFromToken(toToken);
     setToToken(temp);
+    setFromAmount('0.1');
   };
 
-  // 1. Market Swap Execution (with SOR & Permit2)
+  const handleClaimFaucet = async () => {
+    if (!provider || !address) {
+      if (onConnect) onConnect();
+      else showToast(t.connectWallet, 'info');
+      return;
+    }
+    try {
+      setIsClaimingFaucet(true);
+      const walletClient = createWalletClient({
+        account: address as Address,
+        chain: giwaSepolia,
+        transport: custom(provider),
+      });
+
+      const tokenToClaim = fromToken.isNative ? USDC_ADDRESS : fromToken.address;
+      showToast(language === 'ko' ? '1,000 테스트 토큰 요청 중...' : 'Requesting 1,000 test tokens...', 'info');
+
+      const hash = await walletClient.writeContract({
+        address: tokenToClaim,
+        abi: ERC20_ABI,
+        functionName: 'faucet',
+        args: [],
+      });
+
+      await waitForSuccess(publicClient, hash);
+      showToast(language === 'ko' ? '1,000 테스트 토큰 지급 완료!' : 'Claimed 1,000 test tokens successfully!', 'success');
+      refreshBalances();
+    } catch (err: unknown) {
+      console.error(err);
+      showToast(err instanceof Error ? err.message : 'Faucet claim failed', 'error');
+    } finally {
+      setIsClaimingFaucet(false);
+    }
+  };
+
   const executeMarketSwap = async () => {
     if (!provider || !address) {
-      showToast('Please connect your wallet first', 'error');
+      if (onConnect) onConnect();
+      else showToast(t.connectWallet, 'info');
+      return;
+    }
+
+    if (!fromAmount || parseFloat(fromAmount) <= 0) {
+      showToast(language === 'ko' ? '수량을 입력하세요.' : 'Please enter a valid amount', 'info');
       return;
     }
 
@@ -284,333 +297,215 @@ export default function GiwaSwap({ provider, address }: Props) {
         transport: custom(provider),
       });
 
-      if (toToken.isNative) throw new Error('Select WETH as the output. Atomic native ETH output is not supported yet.');
-      if (usePermit2 && !fromToken.isNative) throw new Error('Permit2 swap execution is not connected yet. Turn off Permit2 to use a token approval.');
-      const params = buildSwapParams(smartRoute, address as Address, fromToken.decimals, BigInt(Math.floor(Date.now() / 1000) + 1200));
-      for (const token of new Set(params.hops.flatMap(hop => [hop.tokenIn, hop.tokenOut]))) {
-        const code = await publicClient.getBytecode({ address: token });
-        if (!code || code === '0x') throw new Error('A selected token is not deployed on GIWA Sepolia. This pair is unavailable.');
-      }
-      // Resolve the entire route before asking for an approval or spending gas.
-      const factory = await publicClient.readContract({ address: GIWA_DEX_ROUTER, abi: parseAbi(['function factory() view returns (address)']), functionName: 'factory' });
-      for (const hop of params.hops) {
-        const pool = await publicClient.readContract({ address: factory, abi: parseAbi(['function getPool(address,address,uint24,bool) view returns (address)']), functionName: 'getPool', args: [hop.tokenIn, hop.tokenOut, hop.fee, hop.isStable] });
-        if (pool === '0x0000000000000000000000000000000000000000') throw new Error('This pair has no deployed pool. Choose a supported pair.');
-        const poolCode = await publicClient.getBytecode({ address: pool });
-        if (!poolCode || poolCode === '0x') throw new Error('The route pool is not deployed.');
-      }
+      const parsedAmountIn = parseUnits(fromAmount, fromToken.decimals);
+      const deadline = BigInt(Math.floor(Date.now() / 1000) + 1200);
+
       if (!fromToken.isNative) {
-        const allowance = await publicClient.readContract({ address: fromToken.address, abi: ERC20_ABI, functionName: 'allowance', args: [address as Address, GIWA_DEX_ROUTER] });
-        if (allowance < params.amountIn) {
-          if (allowance > 0n) {
-            const reset = await walletClient.writeContract({ address: fromToken.address, abi: ERC20_ABI, functionName: 'approve', args: [GIWA_DEX_ROUTER, 0n] });
-            await waitForSuccess(publicClient, reset);
-          }
-          const approval = await walletClient.writeContract({ address: fromToken.address, abi: ERC20_ABI, functionName: 'approve', args: [GIWA_DEX_ROUTER, params.amountIn] });
-          await waitForSuccess(publicClient, approval);
+        const allowance = (await publicClient.readContract({
+          address: fromToken.address,
+          abi: ERC20_ABI,
+          functionName: 'allowance',
+          args: [address as Address, GIWA_DEX_ROUTER],
+        })) as bigint;
+
+        if (allowance < parsedAmountIn) {
+          showToast(language === 'ko' ? '토큰 승인 요청 중...' : 'Approving token transfer...', 'info');
+          const approveHash = await walletClient.writeContract({
+            address: fromToken.address,
+            abi: ERC20_ABI,
+            functionName: 'approve',
+            args: [GIWA_DEX_ROUTER, BigInt('0xffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffff')],
+          });
+          await waitForSuccess(publicClient, approveHash);
+          showToast(language === 'ko' ? '토큰 승인 완료!' : 'Token approved successfully', 'success');
         }
       }
-      const value = fromToken.isNative ? params.amountIn : 0n;
-      const simulation = await publicClient.simulateContract({ address: GIWA_DEX_ROUTER, abi: SWAP_ROUTER_ABI, functionName: 'exactInputMultiHop', args: [params], account: address as Address, value });
-      params.amountOutMinimum = minimumSwapOutput(simulation.result, slippage);
-      const checked = await publicClient.simulateContract({ address: GIWA_DEX_ROUTER, abi: SWAP_ROUTER_ABI, functionName: 'exactInputMultiHop', args: [params], account: address as Address, value });
 
-      showToast(
-        language === 'ko'
-          ? `[0.2s Flashblocks] ${fromToken.symbol} ➔ ${toToken.symbol} 스왑 제출 중...`
-          : `[0.2s Flashblocks] Submitting ${fromToken.symbol} ➔ ${toToken.symbol} swap...`,
-        'info'
-      );
+      showToast(language === 'ko' ? '스왑 트랜잭션 전송 중 (200ms)...' : 'Submitting swap (200ms Flashblocks)...', 'info');
 
-      const hash = await walletClient.writeContract(checked.request);
+      const expectedOutRaw = parseUnits(smartRoute.expectedAmountOut || '0', toToken.decimals);
+      const minAmountOut = expectedOutRaw > 0n ? minimumSwapOutput(expectedOutRaw, slippage) : 1n;
+      const params = buildSwapParams(smartRoute, address as Address, fromToken.decimals, deadline, minAmountOut);
+      const hash = await walletClient.writeContract({
+        address: GIWA_DEX_ROUTER,
+        abi: SWAP_ROUTER_ABI,
+        functionName: 'exactInputMultiHop',
+        args: [params],
+        value: fromToken.isNative ? params.amountIn : 0n,
+      });
 
       setTxHash(hash);
-      showToast('Swap submitted. Waiting for confirmation...', 'info');
       await waitForSuccess(publicClient, hash);
-      showToast(language === 'ko' ? '스왑이 성공적으로 확정되었습니다!' : 'Swap successfully executed on Giwa Sepolia!', 'success');
+
+      showToast(language === 'ko' ? '스왑이 확정되었습니다!' : 'Swap confirmed on GIWA Sepolia!', 'success');
       refreshBalances();
-    } catch (err: any) {
-      console.error('Swap failed:', err);
-      showToast(err?.shortMessage || err?.message || 'Swap failed on testnet', 'error');
+    } catch (err: unknown) {
+      console.error('Swap error:', err);
+      showToast(err instanceof Error ? err.message : 'Swap execution failed', 'error');
     } finally {
       setIsSwapping(false);
     }
   };
 
-  // 2. Limit Order Creation
   const handleCreateLimitOrder = async () => {
     if (!address) {
-      showToast('Please connect your wallet first', 'error');
+      if (onConnect) onConnect();
       return;
     }
-
-    const orderId = `limit_${Date.now()}`;
-    const newOrder: DEXLimitOrder = {
-      id: orderId,
+    const order: DEXLimitOrder = {
+      id: 'lo-' + Date.now(),
       maker: address as Address,
-      tokenInSymbol: fromToken.symbol,
-      tokenOutSymbol: toToken.symbol,
       tokenInAddress: fromToken.address,
       tokenOutAddress: toToken.address,
+      tokenInSymbol: fromToken.symbol,
+      tokenOutSymbol: toToken.symbol,
       amountIn: fromAmount,
-      targetPriceUSD: parseFloat(limitTargetPrice) || 0,
+      targetPriceUSD: parseFloat(limitTargetPrice || '0'),
       minAmountOut: toAmount,
       createdAt: Date.now(),
-      expiresAt: Date.now() + limitDurationDays * 86400 * 1000,
+      expiresAt: Date.now() + limitDurationDays * 86400000,
       status: 'OPEN',
-      isBuy: fromToken.symbol === 'USDC' || fromToken.symbol === 'KRWC',
+      isBuy: true,
     };
-
-    saveDEXLimitOrder(newOrder);
-    showToast(
-      language === 'ko'
-        ? `지정가 주문 등록 완료! (0.2s Flashblocks 감시 활성)`
-        : `Limit order created! (0.2s Flashblocks trigger active)`,
-      'success'
-    );
+    saveDEXLimitOrder(order);
+    showToast(language === 'ko' ? '지정가 주문이 등록되었습니다.' : 'Limit order placed successfully', 'success');
   };
 
-  // 3. DCA Stream Creation
   const handleCreateDCA = async () => {
     if (!address) {
-      showToast('Please connect your wallet first', 'error');
+      if (onConnect) onConnect();
       return;
     }
-
-    const intervalSec = dcaFrequency === 'HOURLY' ? 3600 : dcaFrequency === 'DAILY' ? 86400 : 604800;
-    const amountPer = (parseFloat(fromAmount) / dcaTotalOrders).toFixed(4);
-
-    const streamId = `dca_${Date.now()}`;
-    const newStream: DEXDCAStream = {
-      id: streamId,
+    const intervalMs = dcaFrequency === 'HOURLY' ? 3600000 : dcaFrequency === 'DAILY' ? 86400000 : 604800000;
+    const stream: DEXDCAStream = {
+      id: 'dca-' + Date.now(),
       owner: address as Address,
-      tokenInSymbol: fromToken.symbol,
-      tokenOutSymbol: toToken.symbol,
       tokenInAddress: fromToken.address,
       tokenOutAddress: toToken.address,
-      totalAmountIn: fromAmount,
-      amountPerInterval: amountPer,
+      tokenInSymbol: fromToken.symbol,
+      tokenOutSymbol: toToken.symbol,
+      totalAmountIn: (parseFloat(fromAmount || '0') * dcaTotalOrders).toString(),
+      amountPerInterval: fromAmount,
       frequency: dcaFrequency,
-      intervalSeconds: intervalSec,
+      intervalSeconds: intervalMs / 1000,
       totalIntervals: dcaTotalOrders,
       intervalsCompleted: 0,
       createdAt: Date.now(),
-      nextExecutionTime: Date.now() + intervalSec * 1000,
+      nextExecutionTime: Date.now() + intervalMs,
       status: 'ACTIVE',
     };
-
-    saveDEXDCAStream(newStream);
-    showToast(
-      language === 'ko'
-        ? `DCA 자동 적립식 스트림이 시작되었습니다 (${dcaTotalOrders}회 분할)`
-        : `DCA auto-invest stream active (${dcaTotalOrders} orders schedule)`,
-      'success'
-    );
+    saveDEXDCAStream(stream);
+    showToast(language === 'ko' ? 'DCA 적립 스트림이 시작되었습니다.' : 'DCA stream started successfully', 'success');
   };
 
+  const filteredTokens = tokens.filter(
+    (t) =>
+      t.symbol.toLowerCase().includes(searchQuery.toLowerCase()) ||
+      t.name.toLowerCase().includes(searchQuery.toLowerCase())
+  );
+
+  const isInsufficientBalance = parseFloat(fromAmount || '0') > parseFloat(fromBalance || '0');
+  const isInputZero = !fromAmount || parseFloat(fromAmount) <= 0;
+
+  const quotedOutputBigInt = parseUnits(toAmount || '0', toToken.decimals);
+  const minimumOutputDisplay = quotedOutputBigInt > 0n
+    ? formatUnits(minimumSwapOutput(quotedOutputBigInt, slippage), toToken.decimals)
+    : '0.00';
+
   return (
-    <div style={{ maxWidth: 540, margin: '0 auto', display: 'flex', flexDirection: 'column', gap: 16 }}>
-      {/* Top Banner: Giwa Testnet & Flashblocks */}
+    <div style={{ width: '100%', maxWidth: 480, margin: '0 auto', display: 'flex', flexDirection: 'column', gap: 16 }}>
+      {/* Top Mode Pill Selector */}
       <div
         style={{
           display: 'flex',
           alignItems: 'center',
           justifyContent: 'space-between',
-          padding: '12px 16px',
-          background: 'var(--card)',
+          padding: '4px',
+          borderRadius: 9999,
+          background: 'var(--card-solid, #131823)',
           border: '1px solid var(--border)',
-          borderRadius: 16,
         }}
       >
-        <div style={{ display: 'flex', alignItems: 'center', gap: 10 }}>
-          <div
+        <div style={{ display: 'flex', gap: 4 }}>
+          {(['MARKET', 'LIMIT', 'DCA'] as const).map((m) => {
+            const active = mode === m;
+            const label = m === 'MARKET' ? (language === 'ko' ? '스왑' : 'Swap') : m === 'LIMIT' ? (language === 'ko' ? '지정가' : 'Limit') : 'DCA';
+            return (
+              <button
+                key={m}
+                onClick={() => setMode(m)}
+                style={{
+                  padding: '6px 16px',
+                  borderRadius: 9999,
+                  border: 'none',
+                  background: active ? 'var(--secondary)' : 'transparent',
+                  color: active ? 'var(--foreground)' : 'var(--muted-foreground)',
+                  fontSize: 13,
+                  fontWeight: 700,
+                  cursor: 'pointer',
+                  transition: 'all 0.15s ease',
+                }}
+              >
+                {label}
+              </button>
+            );
+          })}
+        </div>
+
+        <div style={{ display: 'flex', alignItems: 'center', gap: 6, paddingRight: 6 }}>
+          <button
+            onClick={refreshBalances}
+            title="Refresh balance"
             style={{
-              width: 32,
-              height: 32,
-              borderRadius: 10,
-              background: 'oklch(0.6724 0.1308 38.7559 / 0.15)',
+              background: 'none',
+              border: 'none',
+              color: 'var(--muted-foreground)',
+              cursor: 'pointer',
+              padding: 6,
+              borderRadius: 8,
               display: 'flex',
               alignItems: 'center',
-              justifyContent: 'center',
-              color: 'var(--primary)',
             }}
           >
-            <Zap size={18} />
-          </div>
-          <div>
-            <div style={{ fontSize: 13, fontWeight: 700, color: 'var(--foreground)' }}>
-              GIWA Sepolia Testnet · 0.2s Flashblocks
-            </div>
-            <div style={{ fontSize: 11, color: 'var(--muted-foreground)' }}>
-              {language === 'ko' ? '경로 미리보기 · 표준 승인' : 'Route preview · standard approval'}
-            </div>
-          </div>
-        </div>
-
-        <div style={{ display: 'flex', alignItems: 'center', gap: 6 }}>
-          <span
+            <RefreshCw size={15} />
+          </button>
+          <button
+            onClick={() => setShowSettings(!showSettings)}
+            title="Swap settings"
             style={{
-              width: 8,
-              height: 8,
-              borderRadius: '50%',
-              background: '#22c55e',
-              boxShadow: '0 0 8px #22c55e',
+              background: showSettings ? 'var(--secondary)' : 'none',
+              border: 'none',
+              color: showSettings ? 'var(--primary)' : 'var(--muted-foreground)',
+              cursor: 'pointer',
+              padding: 6,
+              borderRadius: 8,
+              display: 'flex',
+              alignItems: 'center',
             }}
-          />
-          <span style={{ fontSize: 11, fontWeight: 700, color: '#22c55e' }}>ONLINE</span>
+          >
+            <Settings2 size={16} />
+          </button>
         </div>
       </div>
 
-      {/* Trading Mode Switcher */}
-      <div
-        style={{
-          display: 'flex',
-          background: 'var(--card)',
-          border: '1px solid var(--border)',
-          borderRadius: 14,
-          padding: 4,
-          gap: 4,
-        }}
-      >
-        <button
-          onClick={() => setMode('MARKET')}
-          style={{
-            flex: 1,
-            padding: '8px 0',
-            borderRadius: 10,
-            border: 'none',
-            background: mode === 'MARKET' ? 'var(--primary)' : 'transparent',
-            color: mode === 'MARKET' ? '#fff' : 'var(--muted-foreground)',
-            fontSize: 12.5,
-            fontWeight: 700,
-            cursor: 'pointer',
-            display: 'flex',
-            alignItems: 'center',
-            justifyContent: 'center',
-            gap: 6,
-            transition: 'all 0.15s ease',
-          }}
-        >
-          <ArrowDownUp size={14} />
-          <span>{language === 'ko' ? '스왑 (SOR)' : 'Market Swap'}</span>
-        </button>
-
-        <button
-          onClick={() => setMode('LIMIT')}
-          style={{
-            flex: 1,
-            padding: '8px 0',
-            borderRadius: 10,
-            border: 'none',
-            background: mode === 'LIMIT' ? 'var(--primary)' : 'transparent',
-            color: mode === 'LIMIT' ? '#fff' : 'var(--muted-foreground)',
-            fontSize: 12.5,
-            fontWeight: 700,
-            cursor: 'pointer',
-            display: 'flex',
-            alignItems: 'center',
-            justifyContent: 'center',
-            gap: 6,
-            transition: 'all 0.15s ease',
-          }}
-        >
-          <Sliders size={14} />
-          <span>{language === 'ko' ? '지정가 (0.2s)' : 'Limit Order'}</span>
-        </button>
-
-        <button
-          onClick={() => setMode('DCA')}
-          style={{
-            flex: 1,
-            padding: '8px 0',
-            borderRadius: 10,
-            border: 'none',
-            background: mode === 'DCA' ? 'var(--primary)' : 'transparent',
-            color: mode === 'DCA' ? '#fff' : 'var(--muted-foreground)',
-            fontSize: 12.5,
-            fontWeight: 700,
-            cursor: 'pointer',
-            display: 'flex',
-            alignItems: 'center',
-            justifyContent: 'center',
-            gap: 6,
-            transition: 'all 0.15s ease',
-          }}
-        >
-          <Clock size={14} />
-          <span>{language === 'ko' ? 'DCA 적립' : 'DCA Stream'}</span>
-        </button>
-      </div>
-
-      {/* Main Trading Card */}
-      <div
-        style={{
-          background: 'var(--card)',
-          border: '1px solid var(--border)',
-          borderRadius: 24,
-          padding: isMobile ? 18 : 24,
-          boxShadow: '0 12px 36px rgba(0,0,0,0.15)',
-          position: 'relative',
-        }}
-      >
-        {/* Header */}
-        <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', marginBottom: 16 }}>
-          <div style={{ display: 'flex', alignItems: 'center', gap: 8 }}>
-            <h2 style={{ fontSize: 18, fontWeight: 800, color: 'var(--foreground)', margin: 0 }}>
-              {mode === 'MARKET' ? (language === 'ko' ? '토큰 스왑 (SOR)' : 'Smart Swap') :
-               mode === 'LIMIT' ? (language === 'ko' ? '플래시블록 지정가 주문' : 'Flashblocks Limit Order') :
-               (language === 'ko' ? 'DCA 적립식 자동 투자' : 'Automated DCA Stream')}
-            </h2>
-          </div>
-
-          <div style={{ display: 'flex', alignItems: 'center', gap: 8 }}>
-            <button
-              onClick={refreshBalances}
-              title="Refresh"
-              style={{
-                background: 'none',
-                border: 'none',
-                color: 'var(--muted-foreground)',
-                cursor: 'pointer',
-                padding: 4,
-                display: 'flex',
-                alignItems: 'center',
-              }}
-            >
-              <RefreshCw size={16} />
-            </button>
-            <button
-              onClick={() => setShowSettings(!showSettings)}
-              title="Settings"
-              style={{
-                background: showSettings ? 'var(--muted)' : 'none',
-                border: 'none',
-                color: 'var(--foreground)',
-                cursor: 'pointer',
-                padding: 6,
-                borderRadius: 8,
-                display: 'flex',
-                alignItems: 'center',
-              }}
-            >
-              <Settings2 size={18} />
-            </button>
-          </div>
-        </div>
-
-        {/* Slippage Drawer */}
+      {/* Main Uniswap Card */}
+      <div className="uniswap-card" style={{ padding: isMobile ? 18 : 22, position: 'relative' }}>
+        {/* Slippage Dropdown Drawer */}
         {showSettings && (
           <div
             style={{
               padding: 14,
               borderRadius: 14,
-              background: 'var(--muted)',
-              marginBottom: 16,
+              background: 'var(--input)',
               border: '1px solid var(--border)',
+              marginBottom: 16,
             }}
           >
-            <div style={{ fontSize: 12, fontWeight: 700, marginBottom: 8, color: 'var(--foreground)' }}>
-              {t.slippageTolerance}
+            <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: 10 }}>
+              <span style={{ fontSize: 12, fontWeight: 700, color: 'var(--foreground)' }}>
+                {t.slippageTolerance || 'Max Slippage'}
+              </span>
+              <span style={{ fontSize: 12, fontWeight: 700, color: 'var(--primary)' }}>{slippage}%</span>
             </div>
             <div style={{ display: 'flex', gap: 8 }}>
               {[0.1, 0.5, 1.0].map((val) => (
@@ -618,11 +513,12 @@ export default function GiwaSwap({ provider, address }: Props) {
                   key={val}
                   onClick={() => setSlippage(val)}
                   style={{
-                    padding: '6px 14px',
-                    borderRadius: 8,
+                    flex: 1,
+                    padding: '6px 0',
+                    borderRadius: 10,
                     border: slippage === val ? '1px solid var(--primary)' : '1px solid var(--border)',
-                    background: slippage === val ? 'var(--primary)' : 'var(--card)',
-                    color: slippage === val ? '#fff' : 'var(--foreground)',
+                    background: slippage === val ? 'var(--accent)' : 'var(--secondary)',
+                    color: slippage === val ? 'var(--primary)' : 'var(--foreground)',
                     fontSize: 12,
                     fontWeight: 700,
                     cursor: 'pointer',
@@ -636,177 +532,202 @@ export default function GiwaSwap({ provider, address }: Props) {
         )}
 
         {/* FROM BOX */}
-        <div
-          style={{
-            padding: '14px 16px',
-            borderRadius: 18,
-            background: 'var(--muted)',
-            border: '1px solid var(--border)',
-            marginBottom: 6,
-          }}
-        >
-          <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: 6 }}>
-            <span style={{ fontSize: 12, fontWeight: 600, color: 'var(--muted-foreground)' }}>{t.youPay || 'You pay'}</span>
+        <div className="uniswap-input-box">
+          <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: 8 }}>
+            <span style={{ fontSize: 13, fontWeight: 600, color: 'var(--muted-foreground)' }}>
+              {language === 'ko' ? '판매할 토큰' : 'You pay'}
+            </span>
             <div style={{ display: 'flex', alignItems: 'center', gap: 6, fontSize: 12, color: 'var(--muted-foreground)' }}>
               <span>{t.balance}: <strong style={{ color: 'var(--foreground)' }}>{fromBalance}</strong></span>
               {parseFloat(fromBalance) > 0 && (
-                <button
-                  type="button"
-                  onClick={() => setFromAmount(fromBalance)}
-                  style={{
-                    background: 'var(--card)',
-                    border: '1px solid var(--border)',
-                    borderRadius: 6,
-                    padding: '1px 6px',
-                    fontSize: 10,
-                    fontWeight: 800,
-                    color: 'var(--primary)',
-                    cursor: 'pointer',
-                  }}
-                >
-                  MAX
-                </button>
+                <div style={{ display: 'flex', gap: 4 }}>
+                  <button
+                    type="button"
+                    onClick={() => setFromAmount((parseFloat(fromBalance) * 0.5).toFixed(4))}
+                    style={{
+                      background: 'var(--secondary)',
+                      border: '1px solid var(--border)',
+                      borderRadius: 6,
+                      padding: '2px 6px',
+                      fontSize: 10,
+                      fontWeight: 800,
+                      color: 'var(--primary)',
+                      cursor: 'pointer',
+                    }}
+                  >
+                    50%
+                  </button>
+                  <button
+                    type="button"
+                    onClick={() => setFromAmount(fromBalance)}
+                    style={{
+                      background: 'var(--secondary)',
+                      border: '1px solid var(--border)',
+                      borderRadius: 6,
+                      padding: '2px 6px',
+                      fontSize: 10,
+                      fontWeight: 800,
+                      color: 'var(--primary)',
+                      cursor: 'pointer',
+                    }}
+                  >
+                    MAX
+                  </button>
+                </div>
               )}
             </div>
           </div>
 
-          <div style={{ display: 'flex', alignItems: 'center', gap: 12 }}>
+          <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', gap: 12 }}>
             <input
               type="number"
               value={fromAmount}
               onChange={(e) => setFromAmount(e.target.value)}
               placeholder="0"
               style={{
-                flex: 1,
+                width: '100%',
                 background: 'none',
                 border: 'none',
-                fontSize: 28,
+                fontSize: 32,
                 fontWeight: 800,
                 color: 'var(--foreground)',
                 outline: 'none',
-                minWidth: 0,
               }}
             />
 
             <button
               onClick={() => setShowFromModal(true)}
-              style={{
-                display: 'flex',
-                alignItems: 'center',
-                gap: 8,
-                padding: '6px 12px 6px 8px',
-                borderRadius: 20,
-                background: 'var(--card)',
-                border: '1px solid var(--border)',
-                color: 'var(--foreground)',
-                fontSize: 15,
-                fontWeight: 800,
-                cursor: 'pointer',
-                flexShrink: 0,
-                boxShadow: '0 2px 8px rgba(0,0,0,0.06)',
-              }}
+              className="uniswap-token-chip"
+              style={{ flexShrink: 0 }}
             >
-              <TokenIcon symbol={fromToken.symbol} size={24} />
+              <TokenIcon symbol={fromToken.symbol} size={22} />
               <span>{fromToken.symbol}</span>
               <ChevronDown size={14} style={{ color: 'var(--muted-foreground)' }} />
             </button>
           </div>
+
+          <div style={{ fontSize: 12, color: 'var(--muted-foreground)', marginTop: 4 }}>
+            ~${(parseFloat(fromAmount || '0') * (fromToken.symbol === 'ETH' || fromToken.symbol === 'WETH' ? 2500 : 1)).toFixed(2)} USD
+          </div>
         </div>
 
-        {/* SWAP DIRECTION BUTTON */}
+        {/* SWAP DIRECTION ARROW */}
         <div style={{ display: 'flex', justifyContent: 'center', margin: '-14px 0', position: 'relative', zIndex: 2 }}>
           <button
             onClick={handleSwapTokens}
-            title="Swap direction"
+            title="Switch tokens"
             style={{
-              width: 36,
-              height: 36,
+              width: 38,
+              height: 38,
               borderRadius: '50%',
-              background: 'var(--card)',
+              background: 'var(--card-solid, #131823)',
               border: '2px solid var(--border)',
               color: 'var(--primary)',
               display: 'flex',
               alignItems: 'center',
               justifyContent: 'center',
               cursor: 'pointer',
-              boxShadow: '0 4px 12px rgba(0,0,0,0.12)',
-              transition: 'transform 0.15s ease',
+              boxShadow: '0 4px 16px rgba(0,0,0,0.3)',
+              transition: 'all 0.2s cubic-bezier(0.4, 0, 0.2, 1)',
             }}
-            onMouseEnter={(e) => { e.currentTarget.style.transform = 'scale(1.08) rotate(180deg)'; }}
-            onMouseLeave={(e) => { e.currentTarget.style.transform = 'scale(1) rotate(0deg)'; }}
+            onMouseEnter={(e) => {
+              e.currentTarget.style.transform = 'scale(1.1) rotate(180deg)';
+              e.currentTarget.style.borderColor = 'var(--primary)';
+            }}
+            onMouseLeave={(e) => {
+              e.currentTarget.style.transform = 'scale(1) rotate(0deg)';
+              e.currentTarget.style.borderColor = 'var(--border)';
+            }}
           >
             <ArrowDownUp size={16} />
           </button>
         </div>
 
         {/* TO BOX */}
-        <div
-          style={{
-            padding: '14px 16px',
-            borderRadius: 18,
-            background: 'var(--muted)',
-            border: '1px solid var(--border)',
-            marginTop: 6,
-            marginBottom: 14,
-          }}
-        >
-          <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: 6 }}>
-            <span style={{ fontSize: 12, fontWeight: 600, color: 'var(--muted-foreground)' }}>{t.youReceive || 'You receive'}</span>
+        <div className="uniswap-input-box" style={{ marginTop: 6, marginBottom: 14 }}>
+          <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: 8 }}>
+            <span style={{ fontSize: 13, fontWeight: 600, color: 'var(--muted-foreground)' }}>
+              {language === 'ko' ? '받을 토큰 (예상)' : 'You receive'}
+            </span>
             <span style={{ fontSize: 12, color: 'var(--muted-foreground)' }}>
               {t.balance}: <strong style={{ color: 'var(--foreground)' }}>{toBalance}</strong>
             </span>
           </div>
 
-          <div style={{ display: 'flex', alignItems: 'center', gap: 12 }}>
+          <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', gap: 12 }}>
             <input
               type="text"
               readOnly
               value={toAmount}
               placeholder="0"
               style={{
-                flex: 1,
+                width: '100%',
                 background: 'none',
                 border: 'none',
-                fontSize: 28,
+                fontSize: 32,
                 fontWeight: 800,
                 color: 'var(--foreground)',
                 outline: 'none',
-                minWidth: 0,
               }}
             />
 
             <button
               onClick={() => setShowToModal(true)}
-              style={{
-                display: 'flex',
-                alignItems: 'center',
-                gap: 8,
-                padding: '6px 12px 6px 8px',
-                borderRadius: 20,
-                background: 'var(--card)',
-                border: '1px solid var(--border)',
-                color: 'var(--foreground)',
-                fontSize: 15,
-                fontWeight: 800,
-                cursor: 'pointer',
-                flexShrink: 0,
-                boxShadow: '0 2px 8px rgba(0,0,0,0.06)',
-              }}
+              className="uniswap-token-chip"
+              style={{ flexShrink: 0 }}
             >
-              <TokenIcon symbol={toToken.symbol} size={24} />
+              <TokenIcon symbol={toToken.symbol} size={22} />
               <span>{toToken.symbol}</span>
               <ChevronDown size={14} style={{ color: 'var(--muted-foreground)' }} />
             </button>
           </div>
+
+          <div style={{ fontSize: 12, color: 'var(--muted-foreground)', marginTop: 4 }}>
+            ~${(parseFloat(toAmount || '0') * (toToken.symbol === 'ETH' || toToken.symbol === 'WETH' ? 2500 : 1)).toFixed(2)} USD
+          </div>
         </div>
 
-        {/* Limit Order Target Price Input & Expiry */}
+        {/* Route & Fee Breakdown Details */}
+        {mode === 'MARKET' && (
+          <div
+            style={{
+              padding: '12px 14px',
+              borderRadius: 14,
+              background: 'var(--input)',
+              border: '1px solid var(--border)',
+              marginBottom: 16,
+              fontSize: 12,
+              display: 'flex',
+              flexDirection: 'column',
+              gap: 6,
+            }}
+          >
+            <div style={{ display: 'flex', justifyContent: 'space-between', color: 'var(--muted-foreground)' }}>
+              <span>{language === 'ko' ? '스마트 오더 라우트 (SOR)' : 'Smart Order Route'}</span>
+              <span style={{ fontWeight: 700, color: 'var(--foreground)' }}>{smartRoute.routeLabel}</span>
+            </div>
+            <div style={{ display: 'flex', justifyContent: 'space-between', color: 'var(--muted-foreground)' }}>
+              <span>{language === 'ko' ? '네트워크 가스비' : 'Network Fee'}</span>
+              <span style={{ fontWeight: 700, color: '#22c55e', display: 'flex', alignItems: 'center', gap: 4 }}>
+                <Zap size={11} /> &lt; $0.001 (0.2s Flashblocks)
+              </span>
+            </div>
+            <div style={{ display: 'flex', justifyContent: 'space-between', color: 'var(--muted-foreground)' }}>
+              <span>{language === 'ko' ? '최소 수령 수량' : 'Minimum Output'}</span>
+              <span style={{ fontWeight: 600, color: 'var(--foreground)' }}>
+                {minimumOutputDisplay} {toToken.symbol}
+              </span>
+            </div>
+          </div>
+        )}
+
+        {/* Limit Order Parameters */}
         {mode === 'LIMIT' && (
-          <div style={{ padding: 14, borderRadius: 14, background: 'var(--muted)', marginBottom: 16, border: '1px solid var(--border)', display: 'flex', flexDirection: 'column', gap: 10 }}>
+          <div style={{ padding: 14, borderRadius: 14, background: 'var(--input)', border: '1px solid var(--border)', marginBottom: 16, display: 'flex', flexDirection: 'column', gap: 10 }}>
             <div>
               <div style={{ display: 'flex', justifyContent: 'space-between', fontSize: 12, fontWeight: 600, color: 'var(--muted-foreground)', marginBottom: 6 }}>
-                <span>{language === 'ko' ? '목표 체결 가격 (USD)' : 'Target Execution Price (USD)'}</span>
-                <span style={{ color: 'var(--primary)' }}>Flashblocks 200ms Trigger</span>
+                <span>{language === 'ko' ? '목표 가격 (USD)' : 'Target Execution Price (USD)'}</span>
+                <span style={{ color: 'var(--primary)', fontWeight: 700 }}>200ms Flashblocks Trigger</span>
               </div>
               <input
                 type="number"
@@ -816,238 +737,133 @@ export default function GiwaSwap({ provider, address }: Props) {
                 style={{ width: '100%', background: 'none', border: 'none', fontSize: 20, fontWeight: 800, color: 'var(--foreground)', outline: 'none' }}
               />
             </div>
-            <div>
-              <div style={{ fontSize: 11, fontWeight: 600, color: 'var(--muted-foreground)', marginBottom: 6 }}>
-                {language === 'ko' ? '주문 유효 기간' : 'Order Expiry Duration'}
-              </div>
-              <div style={{ display: 'flex', gap: 6 }}>
-                {[1, 7, 30].map((days) => (
-                  <button
-                    key={days}
-                    onClick={() => setLimitDurationDays(days)}
-                    style={{
-                      flex: 1,
-                      padding: '4px 0',
-                      borderRadius: 8,
-                      border: limitDurationDays === days ? '1px solid var(--primary)' : '1px solid var(--border)',
-                      background: limitDurationDays === days ? 'var(--primary)' : 'var(--card)',
-                      color: limitDurationDays === days ? '#fff' : 'var(--foreground)',
-                      fontSize: 11,
-                      fontWeight: 700,
-                      cursor: 'pointer',
-                    }}
-                  >
-                    {days} {days === 1 ? (language === 'ko' ? '일' : 'Day') : (language === 'ko' ? '일' : 'Days')}
-                  </button>
-                ))}
-              </div>
+            <div style={{ display: 'flex', gap: 6 }}>
+              {[1, 7, 30].map((days) => (
+                <button
+                  key={days}
+                  onClick={() => setLimitDurationDays(days)}
+                  style={{
+                    flex: 1,
+                    padding: '6px 0',
+                    borderRadius: 8,
+                    border: limitDurationDays === days ? '1px solid var(--primary)' : '1px solid var(--border)',
+                    background: limitDurationDays === days ? 'var(--accent)' : 'var(--secondary)',
+                    color: limitDurationDays === days ? 'var(--primary)' : 'var(--foreground)',
+                    fontSize: 11,
+                    fontWeight: 700,
+                    cursor: 'pointer',
+                  }}
+                >
+                  {days} {days === 1 ? 'Day' : 'Days'}
+                </button>
+              ))}
             </div>
           </div>
         )}
 
         {/* DCA Interval Settings */}
         {mode === 'DCA' && (
-          <div style={{ padding: 14, borderRadius: 14, background: 'var(--muted)', marginBottom: 16, border: '1px solid var(--border)', display: 'flex', flexDirection: 'column', gap: 10 }}>
-            <div>
-              <div style={{ fontSize: 12, fontWeight: 700, color: 'var(--foreground)', marginBottom: 6 }}>
-                {language === 'ko' ? '적립 주기 (Interval)' : 'DCA Frequency'}
-              </div>
-              <div style={{ display: 'flex', gap: 6 }}>
-                {(['HOURLY', 'DAILY', 'WEEKLY'] as const).map((freq) => (
-                  <button
-                    key={freq}
-                    onClick={() => setDcaFrequency(freq)}
-                    style={{
-                      flex: 1,
-                      padding: '6px 0',
-                      borderRadius: 8,
-                      border: dcaFrequency === freq ? '1px solid var(--primary)' : '1px solid var(--border)',
-                      background: dcaFrequency === freq ? 'var(--primary)' : 'var(--card)',
-                      color: dcaFrequency === freq ? '#fff' : 'var(--foreground)',
-                      fontSize: 11,
-                      fontWeight: 700,
-                      cursor: 'pointer',
-                    }}
-                  >
-                    {freq}
-                  </button>
-                ))}
-              </div>
-            </div>
-
-            <div>
-              <div style={{ fontSize: 11, fontWeight: 600, color: 'var(--muted-foreground)', marginBottom: 6 }}>
-                {language === 'ko' ? '총 분할 횟수' : 'Total Orders Count'}
-              </div>
-              <div style={{ display: 'flex', gap: 6 }}>
-                {[5, 10, 20, 50].map((count) => (
-                  <button
-                    key={count}
-                    onClick={() => setDcaTotalOrders(count)}
-                    style={{
-                      flex: 1,
-                      padding: '4px 0',
-                      borderRadius: 8,
-                      border: dcaTotalOrders === count ? '1px solid var(--primary)' : '1px solid var(--border)',
-                      background: dcaTotalOrders === count ? 'var(--primary)' : 'var(--card)',
-                      color: dcaTotalOrders === count ? '#fff' : 'var(--foreground)',
-                      fontSize: 11,
-                      fontWeight: 700,
-                      cursor: 'pointer',
-                    }}
-                  >
-                    {count}x
-                  </button>
-                ))}
-              </div>
+          <div style={{ padding: 14, borderRadius: 14, background: 'var(--input)', border: '1px solid var(--border)', marginBottom: 16, display: 'flex', flexDirection: 'column', gap: 10 }}>
+            <div style={{ display: 'flex', gap: 6 }}>
+              {(['HOURLY', 'DAILY', 'WEEKLY'] as const).map((freq) => (
+                <button
+                  key={freq}
+                  onClick={() => setDcaFrequency(freq)}
+                  style={{
+                    flex: 1,
+                    padding: '6px 0',
+                    borderRadius: 8,
+                    border: dcaFrequency === freq ? '1px solid var(--primary)' : '1px solid var(--border)',
+                    background: dcaFrequency === freq ? 'var(--accent)' : 'var(--secondary)',
+                    color: dcaFrequency === freq ? 'var(--primary)' : 'var(--foreground)',
+                    fontSize: 11,
+                    fontWeight: 700,
+                    cursor: 'pointer',
+                  }}
+                >
+                  {freq}
+                </button>
+              ))}
             </div>
           </div>
         )}
-
-        {/* Permit2 Gasless Toggle */}
-        {!fromToken.isNative && mode === 'MARKET' && (
-          <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', padding: '10px 14px', borderRadius: 12, background: 'var(--muted)', border: '1px solid var(--border)', marginBottom: 16 }}>
-            <label style={{ display: 'flex', alignItems: 'center', gap: 8, fontSize: 12, fontWeight: 600, color: 'var(--foreground)', cursor: 'pointer' }}>
-              <input
-                type="checkbox"
-                checked={usePermit2}
-                onChange={(e) => setUsePermit2(e.target.checked)}
-                style={{ accentColor: 'var(--primary)', width: 15, height: 15 }}
-              />
-              <span>⚡ Permit2 Gasless Approval (1-Signature)</span>
-            </label>
-            <span style={{ fontSize: 10, padding: '2px 6px', borderRadius: 4, background: 'rgba(34, 197, 94, 0.15)', color: '#22c55e', fontWeight: 700 }}>
-              ZERO GAS
-            </span>
-          </div>
-        )}
-
-        {/* Route Details */}
-        <div
-          style={{
-            padding: '12px 14px',
-            borderRadius: 12,
-            background: 'var(--muted)',
-            border: '1px solid var(--border)',
-            marginBottom: 20,
-            fontSize: 12,
-            display: 'flex',
-            flexDirection: 'column',
-            gap: 6,
-          }}
-        >
-          <div style={{ display: 'flex', justifyContent: 'space-between', color: 'var(--muted-foreground)' }}>
-            <span>{language === 'ko' ? 'Smart Order Route (SOR)' : 'Smart Order Route'}</span>
-            <span style={{ fontWeight: 700, color: 'var(--foreground)' }}>
-              {smartRoute.routeLabel}
-            </span>
-          </div>
-
-          <div style={{ display: 'flex', justifyContent: 'space-between', color: 'var(--muted-foreground)' }}>
-            <span>{language === 'ko' ? '예상 가격 영향' : 'Price Impact'}</span>
-            <span style={{ fontWeight: 600, color: smartRoute.priceImpactPercent > 1 ? '#ef4444' : '#22c55e' }}>
-              {language === 'ko' ? '실시간 견적 필요' : 'Live quote required'}
-            </span>
-          </div>
-
-          <div style={{ display: 'flex', justifyContent: 'space-between', color: 'var(--muted-foreground)' }}>
-            <span>{language === 'ko' ? '사전 확인' : 'Preconfirmation'}</span>
-            <span style={{ fontWeight: 600, color: 'var(--primary)' }}>⚡ 0.2s Flashblocks</span>
-          </div>
-
-          <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', paddingTop: 4, borderTop: '1px solid var(--border)' }}>
-            <span style={{ display: 'flex', alignItems: 'center', gap: 4, color: 'var(--muted-foreground)' }}>
-              <ShieldCheck size={13} color="var(--primary)" />
-              {language === 'ko' ? 'Dojang 수수료 할인' : 'Dojang Fee Rebate'}
-            </span>
-            {dojangProfile.feeDiscountPercent > 0 ? (
-              <span
-                onClick={() => setShowDojangModal(true)}
-                style={{
-                  fontWeight: 700,
-                  fontSize: 11,
-                  padding: '2px 8px',
-                  borderRadius: 999,
-                  background: dojangProfile.isVIPTrader ? 'rgba(245, 158, 11, 0.15)' : 'rgba(59, 130, 246, 0.15)',
-                  color: dojangProfile.isVIPTrader ? '#f59e0b' : '#3b82f6',
-                  border: `1px solid ${dojangProfile.isVIPTrader ? 'rgba(245, 158, 11, 0.3)' : 'rgba(59, 130, 246, 0.3)'}`,
-                  cursor: 'pointer',
-                  display: 'flex',
-                  alignItems: 'center',
-                  gap: 4,
-                }}
-              >
-                {dojangProfile.isVIPTrader ? <Award size={12} /> : <ShieldCheck size={12} />}
-                -{dojangProfile.feeDiscountPercent}% ({dojangProfile.activeTier === 'DUNAMU_VIP' ? 'VIP' : 'KYC'})
-              </span>
-            ) : (
-              <button
-                onClick={() => setShowDojangModal(true)}
-                style={{
-                  background: 'none',
-                  border: 'none',
-                  padding: 0,
-                  color: 'var(--primary)',
-                  fontSize: 11,
-                  fontWeight: 700,
-                  cursor: 'pointer',
-                  textDecoration: 'underline',
-                }}
-              >
-                {language === 'ko' ? '도장 인증 시 최대 50% 할인 ➔' : 'Verify on Dojang for -50% ➔'}
-              </button>
-            )}
-          </div>
-        </div>
 
         {/* Action Button */}
-        <button
-          onClick={
-            mode === 'MARKET' ? executeMarketSwap :
-            mode === 'LIMIT' ? handleCreateLimitOrder :
-            handleCreateDCA
-          }
-          disabled={isSwapping}
-          style={{
-            width: '100%',
-            padding: '15px 0',
-            borderRadius: 16,
-            border: 'none',
-            background: 'var(--primary)',
-            color: '#FFFFFF',
-            fontSize: 15,
-            fontWeight: 800,
-            cursor: isSwapping ? 'not-allowed' : 'pointer',
-            boxShadow: '0 6px 20px oklch(0.6724 0.1308 38.7559 / 0.4)',
-            transition: 'all 0.2s ease',
-          }}
-        >
-          {isSwapping
-            ? (language === 'ko' ? '스왑 처리 중...' : 'Swapping...')
-            : mode === 'MARKET'
-            ? (language === 'ko' ? `${fromToken.symbol} ➔ ${toToken.symbol} 스왑 (SOR)` : `Swap ${fromToken.symbol} to ${toToken.symbol}`)
-            : mode === 'LIMIT'
-            ? (language === 'ko' ? `0.2초 지정가 주문 제출` : `Place Limit Order`)
-            : (language === 'ko' ? `DCA 자동 적립 스트림 생성` : `Create DCA Stream`)}
-        </button>
+        {!address ? (
+          <button onClick={onConnect} className="uniswap-btn-primary">
+            {t.connectWallet || 'Connect Wallet'}
+          </button>
+        ) : isInputZero ? (
+          <button disabled className="uniswap-btn-primary">
+            {language === 'ko' ? '수량을 입력하세요' : 'Enter an amount'}
+          </button>
+        ) : isInsufficientBalance ? (
+          <button disabled className="uniswap-btn-primary">
+            {language === 'ko' ? `${fromToken.symbol} 잔액 부족` : `Insufficient ${fromToken.symbol} balance`}
+          </button>
+        ) : (
+          <button
+            onClick={
+              mode === 'MARKET' ? executeMarketSwap :
+              mode === 'LIMIT' ? handleCreateLimitOrder :
+              handleCreateDCA
+            }
+            disabled={isSwapping}
+            className="uniswap-btn-primary"
+          >
+            {isSwapping
+              ? (language === 'ko' ? '스왑 처리 중...' : 'Swapping...')
+              : mode === 'MARKET'
+              ? (language === 'ko' ? `${fromToken.symbol} ➔ ${toToken.symbol} 스왑` : `Swap ${fromToken.symbol} to ${toToken.symbol}`)
+              : mode === 'LIMIT'
+              ? (language === 'ko' ? '지정가 주문 제출' : 'Place Limit Order')
+              : (language === 'ko' ? 'DCA 스트림 시작' : 'Start DCA Stream')}
+          </button>
+        )}
 
-        {/* Tx Receipt */}
+        {/* Faucet Claim Pill */}
+        <div style={{ marginTop: 14, display: 'flex', justifyContent: 'center' }}>
+          <button
+            onClick={handleClaimFaucet}
+            disabled={isClaimingFaucet}
+            style={{
+              background: 'none',
+              border: 'none',
+              color: 'var(--primary)',
+              fontSize: 12,
+              fontWeight: 700,
+              cursor: 'pointer',
+              display: 'flex',
+              alignItems: 'center',
+              gap: 6,
+            }}
+          >
+            <Droplets size={14} />
+            <span>
+              {isClaimingFaucet
+                ? (language === 'ko' ? '토큰 지급 중...' : 'Claiming test tokens...')
+                : (language === 'ko' ? '무료 테스트넷 1,000 토큰 받기 (Faucet)' : 'Claim 1,000 free testnet tokens (Faucet)')}
+            </span>
+          </button>
+        </div>
+
+        {/* Tx Receipt Confirmation */}
         {txHash && (
           <div
             style={{
-              marginTop: 16,
-              padding: 12,
+              marginTop: 14,
+              padding: '10px 14px',
               borderRadius: 12,
               background: 'rgba(34, 197, 94, 0.1)',
-              border: '1px solid #22c55e',
+              border: '1px solid rgba(34, 197, 94, 0.3)',
               display: 'flex',
               alignItems: 'center',
               justifyContent: 'space-between',
             }}
           >
-            <div style={{ display: 'flex', alignItems: 'center', gap: 8, fontSize: 12, color: '#22c55e', fontWeight: 600 }}>
-              <CheckCircle2 size={16} />
-              <span>{language === 'ko' ? '스왑 확정 완료 (200ms)' : 'Swap Confirmed (200ms Flashblocks)'}</span>
+            <div style={{ display: 'flex', alignItems: 'center', gap: 6, fontSize: 12, color: '#22c55e', fontWeight: 700 }}>
+              <CheckCircle2 size={15} />
+              <span>{language === 'ko' ? '스왑 체결 완료 (200ms)' : 'Swap Confirmed (200ms Flashblocks)'}</span>
             </div>
             <a
               href={`https://sepolia-explorer.giwa.io/tx/${txHash}`}
@@ -1063,160 +879,113 @@ export default function GiwaSwap({ provider, address }: Props) {
                 gap: 4,
               }}
             >
-              {language === 'ko' ? '익스플로러 보기' : 'View Explorer'} <ExternalLink size={12} />
+              {language === 'ko' ? '익스플로러' : 'Explorer'} <ExternalLink size={12} />
             </a>
           </div>
         )}
       </div>
 
-      {/* Open Limit Orders List */}
-      {mode === 'LIMIT' && openLimitOrders.length > 0 && (
-        <div style={{ background: 'var(--card)', border: '1px solid var(--border)', borderRadius: 20, padding: 18 }}>
-          <div style={{ fontSize: 14, fontWeight: 800, color: 'var(--foreground)', marginBottom: 12, display: 'flex', justifyContent: 'space-between' }}>
-            <span>{language === 'ko' ? '나의 활성 지정가 주문' : 'My Active Limit Orders'}</span>
-            <span style={{ fontSize: 12, color: 'var(--primary)' }}>{openLimitOrders.filter(o => o.status === 'OPEN').length} Open</span>
-          </div>
-
-          <div style={{ display: 'flex', flexDirection: 'column', gap: 8 }}>
-            {openLimitOrders.map((ord) => (
-              <div key={ord.id} style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', padding: '10px 14px', borderRadius: 12, background: 'var(--muted)', border: '1px solid var(--border)' }}>
-                <div>
-                  <div style={{ fontSize: 13, fontWeight: 700, color: 'var(--foreground)' }}>
-                    {ord.amountIn} {ord.tokenInSymbol} ➔ {ord.tokenOutSymbol}
-                  </div>
-                  <div style={{ fontSize: 11, color: 'var(--muted-foreground)' }}>
-                    Target: ${ord.targetPriceUSD.toLocaleString()} · Status: <span style={{ color: ord.status === 'OPEN' ? '#3b82f6' : '#22c55e', fontWeight: 700 }}>{ord.status}</span>
-                  </div>
-                </div>
-
-                {ord.status === 'OPEN' && (
-                  <div style={{ display: 'flex', gap: 6 }}>
-                    <button
-                      onClick={() => fillDEXLimitOrder(ord.id)}
-                      title="Simulate Flashblocks Keeper Fill"
-                      style={{ padding: '4px 8px', borderRadius: 6, border: 'none', background: 'var(--primary)', color: '#fff', fontSize: 11, fontWeight: 700, cursor: 'pointer' }}
-                    >
-                      Fill
-                    </button>
-                    <button
-                      onClick={() => cancelDEXLimitOrder(ord.id)}
-                      title="Cancel Order"
-                      style={{ padding: '4px 8px', borderRadius: 6, border: '1px solid var(--border)', background: 'var(--card)', color: '#ef4444', fontSize: 11, fontWeight: 700, cursor: 'pointer' }}
-                    >
-                      Cancel
-                    </button>
-                  </div>
-                )}
-              </div>
-            ))}
-          </div>
-        </div>
-      )}
-
-      {/* Active DCA Streams List */}
-      {mode === 'DCA' && activeDCAStreams.length > 0 && (
-        <div style={{ background: 'var(--card)', border: '1px solid var(--border)', borderRadius: 20, padding: 18 }}>
-          <div style={{ fontSize: 14, fontWeight: 800, color: 'var(--foreground)', marginBottom: 12, display: 'flex', justifyContent: 'space-between' }}>
-            <span>{language === 'ko' ? '나의 활성 DCA 스트림' : 'My Active DCA Streams'}</span>
-            <span style={{ fontSize: 12, color: 'var(--primary)' }}>{activeDCAStreams.filter(s => s.status === 'ACTIVE').length} Active</span>
-          </div>
-
-          <div style={{ display: 'flex', flexDirection: 'column', gap: 8 }}>
-            {activeDCAStreams.map((stm) => (
-              <div key={stm.id} style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', padding: '10px 14px', borderRadius: 12, background: 'var(--muted)', border: '1px solid var(--border)' }}>
-                <div>
-                  <div style={{ fontSize: 13, fontWeight: 700, color: 'var(--foreground)' }}>
-                    {stm.amountPerInterval} {stm.tokenInSymbol} / {stm.frequency.toLowerCase()} ➔ {stm.tokenOutSymbol}
-                  </div>
-                  <div style={{ fontSize: 11, color: 'var(--muted-foreground)' }}>
-                    Progress: {stm.intervalsCompleted} / {stm.totalIntervals} Orders Completed
-                  </div>
-                </div>
-
-                {stm.status === 'ACTIVE' && (
-                  <div style={{ display: 'flex', gap: 6 }}>
-                    <button
-                      onClick={() => executeNextDCAInterval(stm.id)}
-                      title="Trigger Next Interval"
-                      style={{ padding: '4px 8px', borderRadius: 6, border: 'none', background: 'var(--primary)', color: '#fff', fontSize: 11, fontWeight: 700, cursor: 'pointer' }}
-                    >
-                      Trigger
-                    </button>
-                    <button
-                      onClick={() => cancelDEXDCAStream(stm.id)}
-                      title="Cancel Stream"
-                      style={{ padding: '4px 8px', borderRadius: 6, border: '1px solid var(--border)', background: 'var(--card)', color: '#ef4444', fontSize: 11, fontWeight: 700, cursor: 'pointer' }}
-                    >
-                      Cancel
-                    </button>
-                  </div>
-                )}
-              </div>
-            ))}
-          </div>
-        </div>
-      )}
-
-      {/* Select Token Modals */}
+      {/* Token Selection Modal */}
       {(showFromModal || showToModal) && (
         <div
-          onClick={() => {
-            setShowFromModal(false);
-            setShowToModal(false);
-          }}
           style={{
             position: 'fixed',
             inset: 0,
-            background: 'rgba(0,0,0,0.6)',
+            zIndex: 1000,
+            background: 'rgba(0, 0, 0, 0.75)',
             backdropFilter: 'blur(8px)',
-            zIndex: 999,
             display: 'flex',
             alignItems: 'center',
             justifyContent: 'center',
             padding: 16,
           }}
+          onClick={() => {
+            setShowFromModal(false);
+            setShowToModal(false);
+          }}
         >
           <div
+            className="uniswap-card"
+            style={{ width: '100%', maxWidth: 420, padding: 20, maxHeight: '85vh', display: 'flex', flexDirection: 'column' }}
             onClick={(e) => e.stopPropagation()}
-            style={{
-              width: '100%',
-              maxWidth: 400,
-              background: 'var(--card)',
-              border: '1px solid var(--border)',
-              borderRadius: 20,
-              padding: 20,
-              boxShadow: '0 20px 48px rgba(0,0,0,0.3)',
-            }}
           >
             <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: 16 }}>
-              <div style={{ fontSize: 16, fontWeight: 700, color: 'var(--foreground)' }}>
+              <h3 style={{ fontSize: 18, fontWeight: 800, color: 'var(--foreground)' }}>
                 {language === 'ko' ? '토큰 선택' : 'Select a token'}
-              </div>
+              </h3>
               <button
                 onClick={() => {
                   setShowFromModal(false);
                   setShowToModal(false);
                 }}
-                style={{
-                  background: 'none',
-                  border: 'none',
-                  fontSize: 18,
-                  color: 'var(--muted-foreground)',
-                  cursor: 'pointer',
-                  padding: 4,
-                }}
+                style={{ background: 'none', border: 'none', color: 'var(--muted-foreground)', cursor: 'pointer' }}
               >
-                ✕
+                <X size={20} />
               </button>
             </div>
 
-            <div style={{ display: 'flex', flexDirection: 'column', gap: 6, maxHeight: 340, overflowY: 'auto' }}>
-              {tokens.map((tk) => (
+            {/* Search Box */}
+            <div
+              style={{
+                display: 'flex',
+                alignItems: 'center',
+                gap: 10,
+                padding: '10px 14px',
+                borderRadius: 14,
+                background: 'var(--input)',
+                border: '1px solid var(--border)',
+                marginBottom: 14,
+              }}
+            >
+              <Search size={16} color="var(--muted-foreground)" />
+              <input
+                type="text"
+                value={searchQuery}
+                onChange={(e) => setSearchQuery(e.target.value)}
+                placeholder={language === 'ko' ? '토큰 이름 또는 심볼 검색' : 'Search name or symbol'}
+                style={{ width: '100%', background: 'none', border: 'none', color: 'var(--foreground)', outline: 'none', fontSize: 14 }}
+              />
+            </div>
+
+            {/* Quick Common Tokens Row */}
+            <div style={{ display: 'flex', flexWrap: 'wrap', gap: 6, marginBottom: 14 }}>
+              {DEFAULT_TOKENS.slice(0, 4).map((t) => (
                 <button
-                  key={tk.symbol + tk.address}
+                  key={t.symbol}
                   onClick={() => {
-                    if (showFromModal) setFromToken(tk);
-                    else setToToken(tk);
+                    if (showFromModal) setFromToken(t);
+                    else setToToken(t);
+                    setShowFromModal(false);
+                    setShowToModal(false);
+                  }}
+                  style={{
+                    display: 'flex',
+                    alignItems: 'center',
+                    gap: 6,
+                    padding: '6px 10px',
+                    borderRadius: 9999,
+                    background: 'var(--secondary)',
+                    border: '1px solid var(--border)',
+                    color: 'var(--foreground)',
+                    fontSize: 13,
+                    fontWeight: 700,
+                    cursor: 'pointer',
+                  }}
+                >
+                  <TokenIcon symbol={t.symbol} size={18} />
+                  <span>{t.symbol}</span>
+                </button>
+              ))}
+            </div>
+
+            {/* Token List */}
+            <div style={{ flex: 1, overflowY: 'auto', display: 'flex', flexDirection: 'column', gap: 4 }}>
+              {filteredTokens.map((t) => (
+                <div
+                  key={t.symbol}
+                  onClick={() => {
+                    if (showFromModal) setFromToken(t);
+                    else setToToken(t);
                     setShowFromModal(false);
                     setShowToModal(false);
                   }}
@@ -1224,51 +993,27 @@ export default function GiwaSwap({ provider, address }: Props) {
                     display: 'flex',
                     alignItems: 'center',
                     justifyContent: 'space-between',
-                    padding: '10px 14px',
-                    borderRadius: 14,
-                    background: 'var(--muted)',
-                    border: '1px solid var(--border)',
+                    padding: '10px 12px',
+                    borderRadius: 12,
                     cursor: 'pointer',
-                    textAlign: 'left',
-                    transition: 'all 0.15s ease',
+                    transition: 'background 0.15s ease',
                   }}
+                  onMouseEnter={(e) => (e.currentTarget.style.background = 'var(--secondary)')}
+                  onMouseLeave={(e) => (e.currentTarget.style.background = 'transparent')}
                 >
-                  <div style={{ display: 'flex', alignItems: 'center', gap: 12 }}>
-                    <TokenIcon symbol={tk.symbol} size={28} />
+                  <div style={{ display: 'flex', alignItems: 'center', gap: 10 }}>
+                    <TokenIcon symbol={t.symbol} size={32} />
                     <div>
-                      <div style={{ fontSize: 14, fontWeight: 700, color: 'var(--foreground)', display: 'flex', alignItems: 'center', gap: 4 }}>
-                        {tk.symbol}
-                        {isTokenDojangVerified(tk.address) && (
-                          <span title="Dojang Verified Asset">
-                            <ShieldCheck size={14} color="#d97706" />
-                          </span>
-                        )}
-                      </div>
-                      <div style={{ fontSize: 12, color: 'var(--muted-foreground)' }}>{tk.name}</div>
+                      <div style={{ fontSize: 15, fontWeight: 800, color: 'var(--foreground)' }}>{t.symbol}</div>
+                      <div style={{ fontSize: 12, color: 'var(--muted-foreground)' }}>{t.name}</div>
                     </div>
                   </div>
-                  {tk.isNative ? (
-                    <span style={{ fontSize: 10, padding: '2px 6px', borderRadius: 4, background: 'var(--primary)', color: '#fff', fontWeight: 700 }}>
-                      NATIVE
-                    </span>
-                  ) : isTokenDojangVerified(tk.address) ? (
-                    <span style={{ fontSize: 10, padding: '2px 6px', borderRadius: 4, background: 'rgba(59, 130, 246, 0.15)', color: '#3b82f6', border: '1px solid rgba(59, 130, 246, 0.3)', fontWeight: 700 }}>
-                      DOJANG
-                    </span>
-                  ) : null}
-                </button>
+                </div>
               ))}
             </div>
           </div>
         </div>
       )}
-
-      {/* Dojang Identity Modal */}
-      <DojangIdentityModal
-        isOpen={showDojangModal}
-        onClose={() => setShowDojangModal(false)}
-        address={address as Address | undefined}
-      />
     </div>
   );
 }

@@ -9,9 +9,9 @@ import {
   type ISeriesApi,
 } from "lightweight-charts";
 import { useCurrency } from "../CurrencyContext";
-import { Zap, TrendingUp, BarChart2 } from "lucide-react";
+import { Zap, TrendingUp, BarChart2, RefreshCw } from "lucide-react";
 
-export type ChartSymbol = "ETH" | "BTC" | "KRWC" | "HANOK" | "GIWA";
+export type ChartSymbol = "ETH" | "BTC" | "KRWC" | "EURC";
 
 interface Props {
   symbol?: ChartSymbol;
@@ -38,61 +38,20 @@ interface LinePoint {
 }
 
 const TIMEFRAMES = [
-  { label: "1s", binanceInterval: "1s", limit: 60, seconds: 1 },
-  { label: "5s", binanceInterval: "5s", limit: 60, seconds: 5 },
-  { label: "1m", binanceInterval: "1m", limit: 120, seconds: 60 },
-  { label: "5m", binanceInterval: "5m", limit: 120, seconds: 300 },
-  { label: "15m", binanceInterval: "15m", limit: 120, seconds: 900 },
-  { label: "1H", binanceInterval: "1h", limit: 168, seconds: 3600 },
-  { label: "1D", binanceInterval: "1d", limit: 180, seconds: 86400 },
+  { label: "1m", interval: "1m", seconds: 60, binanceInterval: "1m", upbitUnit: 1 },
+  { label: "5m", interval: "5m", seconds: 300, binanceInterval: "5m", upbitUnit: 5 },
+  { label: "15m", interval: "15m", seconds: 900, binanceInterval: "15m", upbitUnit: 15 },
+  { label: "1H", interval: "1h", seconds: 3600, binanceInterval: "1h", upbitUnit: 60 },
+  { label: "1D", interval: "1d", seconds: 86400, binanceInterval: "1d", upbitUnit: "days" },
 ] as const;
 
 type TimeframeLabel = (typeof TIMEFRAMES)[number]["label"];
 
-function generateSyntheticCandles(basePrice: number, count: number, stepSec: number): { candles: Candle[]; volumes: VolumePoint[]; ma20: LinePoint[] } {
-  const now = Math.floor(Date.now() / 1000);
-  const candles: Candle[] = [];
-  const volumes: VolumePoint[] = [];
-  let currentPrice = basePrice;
-
-  for (let i = count; i >= 0; i--) {
-    const time = now - i * stepSec;
-    const changePct = (Math.random() - 0.49) * 0.008;
-    const open = currentPrice;
-    const close = open * (1 + changePct);
-    const high = Math.max(open, close) * (1 + Math.random() * 0.003);
-    const low = Math.min(open, close) * (1 - Math.random() * 0.003);
-    currentPrice = close;
-
-    candles.push({ time, open, high, low, close });
-
-    const isUp = close >= open;
-    volumes.push({
-      time,
-      value: Math.floor(Math.random() * 80 + 20) * (basePrice > 100 ? 5 : 5000),
-      color: isUp ? "rgba(34, 197, 94, 0.4)" : "rgba(239, 68, 68, 0.4)",
-    });
-  }
-
-  // Calculate 20-period Moving Average
-  const ma20: LinePoint[] = [];
-  for (let i = 0; i < candles.length; i++) {
-    if (i >= 19) {
-      const slice = candles.slice(i - 19, i + 1);
-      const avg = slice.reduce((sum, c) => sum + c.close, 0) / 20;
-      ma20.push({ time: candles[i].time, value: avg });
-    }
-  }
-
-  return { candles, volumes, ma20 };
-}
-
-const BASE_PRICES_USD: Record<ChartSymbol, number> = {
-  ETH: 3150.0,
-  BTC: 66800.0,
-  KRWC: 0.000714, // 1 KRW in USD
-  HANOK: 0.082,
-  GIWA: 2.45,
+const BINANCE_SYMBOLS: Record<ChartSymbol, string> = {
+  ETH: "ETHUSDT",
+  BTC: "BTCUSDT",
+  KRWC: "USDCUSDT",
+  EURC: "EURUSDT",
 };
 
 export default function TradingViewChart({ symbol = "ETH", onSymbolChange }: Props) {
@@ -102,26 +61,29 @@ export default function TradingViewChart({ symbol = "ETH", onSymbolChange }: Pro
   const volumeSeriesRef = useRef<ISeriesApi<"Histogram"> | null>(null);
   const maSeriesRef = useRef<ISeriesApi<"Line"> | null>(null);
 
-  const { currency, formatCurrencyValue } = useCurrency();
+  const { currency, formatCurrencyValue, rates } = useCurrency();
   const [timeframe, setTimeframe] = useState<TimeframeLabel>("1m");
   const [showMA, setShowMA] = useState(true);
   const [showVolume, setShowVolume] = useState(true);
   const [activeSymbol, setActiveSymbol] = useState<ChartSymbol>(symbol);
-  const [lastPrice, setLastPrice] = useState<number>(BASE_PRICES_USD[symbol]);
+  const [lastPrice, setLastPrice] = useState<number>(3150.0);
+  const [loading, setLoading] = useState<boolean>(false);
+  const [error, setError] = useState<string | null>(null);
 
   useEffect(() => {
     setActiveSymbol(symbol);
   }, [symbol]);
 
   // Currency Multiplier
-  const fxMultiplier = currency === "KRW" ? 1400 : currency === "ETH" ? 1 / BASE_PRICES_USD.ETH : 1;
+  const fxMultiplier = currency === "KRW" ? (rates.usdKrw || 1400) : 1;
 
+  // Initialize Chart Container
   useEffect(() => {
     if (!containerRef.current) return;
 
     const chart = createChart(containerRef.current, {
       width: containerRef.current.clientWidth,
-      height: 320,
+      height: 340,
       layout: {
         background: { type: ColorType.Solid, color: "transparent" },
         textColor: "var(--muted-foreground)",
@@ -142,7 +104,7 @@ export default function TradingViewChart({ symbol = "ETH", onSymbolChange }: Pro
       timeScale: {
         borderColor: "var(--border)",
         timeVisible: true,
-        secondsVisible: timeframe === "1s" || timeframe === "5s",
+        secondsVisible: false,
       },
       crosshair: { mode: 0 },
     });
@@ -194,58 +156,135 @@ export default function TradingViewChart({ symbol = "ETH", onSymbolChange }: Pro
       volumeSeriesRef.current = null;
       maSeriesRef.current = null;
     };
-  }, [timeframe]);
+  }, []);
 
-  // Load candles data
-  const loadChartData = useCallback(() => {
-    const tf = TIMEFRAMES.find((t) => t.label === timeframe) || TIMEFRAMES[2];
-    const basePrice = (BASE_PRICES_USD[activeSymbol] || 100) * fxMultiplier;
-    const { candles, volumes, ma20 } = generateSyntheticCandles(basePrice, tf.limit, tf.seconds);
+  // Fetch REAL Live Candlestick & Volume Data
+  const fetchRealCandles = useCallback(async () => {
+    setLoading(true);
+    setError(null);
+    const tf = TIMEFRAMES.find((t) => t.label === timeframe) || TIMEFRAMES[0];
+    const binanceSymbol = BINANCE_SYMBOLS[activeSymbol] || "ETHUSDT";
 
-    if (candleSeriesRef.current) {
-      candleSeriesRef.current.setData(candles as any);
-      const latest = candles[candles.length - 1];
-      if (latest) setLastPrice(latest.close / fxMultiplier);
+    try {
+      // 1. Fetch real Kline data from public Binance endpoint
+      const binanceUrl = `https://api.binance.com/api/v3/klines?symbol=${binanceSymbol}&interval=${tf.binanceInterval}&limit=100`;
+      const res = await fetch(binanceUrl);
+      
+      if (!res.ok) {
+        throw new Error(`Binance API returned ${res.status}`);
+      }
+
+      const rawData = await res.json();
+      if (!Array.isArray(rawData) || rawData.length === 0) {
+        throw new Error("No candle data returned");
+      }
+
+      const candles: Candle[] = [];
+      const volumes: VolumePoint[] = [];
+
+      for (const item of rawData) {
+        const time = Math.floor(Number(item[0]) / 1000); // Unix timestamp in seconds
+        const open = parseFloat(item[1]) * fxMultiplier;
+        const high = parseFloat(item[2]) * fxMultiplier;
+        const low = parseFloat(item[3]) * fxMultiplier;
+        const close = parseFloat(item[4]) * fxMultiplier;
+        const vol = parseFloat(item[5]);
+
+        candles.push({ time, open, high, low, close });
+
+        const isUp = close >= open;
+        volumes.push({
+          time,
+          value: vol,
+          color: isUp ? "rgba(34, 197, 94, 0.45)" : "rgba(239, 68, 68, 0.45)",
+        });
+      }
+
+      // Compute 20-period Moving Average
+      const ma20: LinePoint[] = [];
+      for (let i = 0; i < candles.length; i++) {
+        if (i >= 19) {
+          const slice = candles.slice(i - 19, i + 1);
+          const avg = slice.reduce((sum, c) => sum + c.close, 0) / 20;
+          ma20.push({ time: candles[i].time, value: avg });
+        }
+      }
+
+      // Update Chart Series
+      if (candleSeriesRef.current) {
+        candleSeriesRef.current.setData(candles as any);
+        const latest = candles[candles.length - 1];
+        if (latest) {
+          setLastPrice(latest.close / fxMultiplier);
+        }
+      }
+      if (volumeSeriesRef.current && showVolume) {
+        volumeSeriesRef.current.setData(volumes as any);
+      }
+      if (maSeriesRef.current && showMA) {
+        maSeriesRef.current.setData(ma20 as any);
+      }
+      if (chartRef.current) {
+        chartRef.current.timeScale().fitContent();
+      }
+    } catch (err: any) {
+      // Fallback to Upbit Proxy if Binance is rate-limited or blocked
+      try {
+        const upbitMarket = activeSymbol === "BTC" ? "KRW-BTC" : "KRW-ETH";
+        const upbitUrl = `/api/upbit-proxy?path=${encodeURIComponent(`/candles/minutes/1?market=${upbitMarket}&count=60`)}`;
+        const upbitRes = await fetch(upbitUrl);
+        if (upbitRes.ok) {
+          const upbitData = await upbitRes.json();
+          if (Array.isArray(upbitData) && upbitData.length > 0) {
+            const sorted = [...upbitData].reverse();
+            const candles: Candle[] = [];
+            const volumes: VolumePoint[] = [];
+
+            for (const item of sorted) {
+              const time = Math.floor(new Date(item.candle_date_time_utc + "Z").getTime() / 1000);
+              const open = (item.opening_price / (rates.usdKrw || 1400)) * fxMultiplier;
+              const high = (item.high_price / (rates.usdKrw || 1400)) * fxMultiplier;
+              const low = (item.low_price / (rates.usdKrw || 1400)) * fxMultiplier;
+              const close = (item.trade_price / (rates.usdKrw || 1400)) * fxMultiplier;
+              const vol = item.candle_acc_trade_volume || 0;
+
+              candles.push({ time, open, high, low, close });
+              volumes.push({
+                time,
+                value: vol,
+                color: close >= open ? "rgba(34, 197, 94, 0.45)" : "rgba(239, 68, 68, 0.45)",
+              });
+            }
+
+            if (candleSeriesRef.current) {
+              candleSeriesRef.current.setData(candles as any);
+              const latest = candles[candles.length - 1];
+              if (latest) setLastPrice(latest.close / fxMultiplier);
+            }
+            if (volumeSeriesRef.current && showVolume) {
+              volumeSeriesRef.current.setData(volumes as any);
+            }
+            if (chartRef.current) {
+              chartRef.current.timeScale().fitContent();
+            }
+            return;
+          }
+        }
+      } catch {}
+      setError("Unable to load real-time market data");
+    } finally {
+      setLoading(false);
     }
-    if (volumeSeriesRef.current && showVolume) {
-      volumeSeriesRef.current.setData(volumes as any);
-    }
-    if (maSeriesRef.current && showMA) {
-      maSeriesRef.current.setData(ma20 as any);
-    }
-    if (chartRef.current) {
-      chartRef.current.timeScale().fitContent();
-    }
-  }, [activeSymbol, timeframe, fxMultiplier, showMA, showVolume]);
+  }, [activeSymbol, timeframe, fxMultiplier, showMA, showVolume, rates.usdKrw]);
 
   useEffect(() => {
-    loadChartData();
-  }, [loadChartData]);
-
-  // Simulate Flashblocks 0.2s live stream tick
-  useEffect(() => {
-    const interval = setInterval(() => {
-      if (!candleSeriesRef.current) return;
-      const noise = (Math.random() - 0.495) * 0.0015;
-      const updatedPriceUSD = lastPrice * (1 + noise);
-      setLastPrice(updatedPriceUSD);
-
-      const now = Math.floor(Date.now() / 1000);
-      const convertedClose = updatedPriceUSD * fxMultiplier;
-
-      candleSeriesRef.current.update({
-        time: now as any,
-        open: convertedClose * (1 - noise * 0.5),
-        high: convertedClose * 1.0005,
-        low: convertedClose * 0.9995,
-        close: convertedClose,
-      });
-    }, 200); // 200ms Giwa Flashblocks speed
-
+    fetchRealCandles();
+    // Poll real market data every 10 seconds
+    const interval = setInterval(fetchRealCandles, 10000);
     return () => clearInterval(interval);
-  }, [activeSymbol, lastPrice, fxMultiplier]);
+  }, [fetchRealCandles]);
 
-  const symbolsList: ChartSymbol[] = ["ETH", "BTC", "KRWC", "HANOK", "GIWA"];
+  const symbolsList: ChartSymbol[] = ["ETH", "BTC", "KRWC", "EURC"];
 
   return (
     <div style={{ background: "var(--card)", border: "1px solid var(--border)", borderRadius: 20, overflow: "hidden", boxShadow: "0 16px 40px rgba(0,0,0,0.25)" }}>
@@ -261,17 +300,18 @@ export default function TradingViewChart({ symbol = "ETH", onSymbolChange }: Pro
                 onSymbolChange?.(s);
               }}
               style={{
-                padding: "4px 10px",
+                padding: "5px 12px",
                 borderRadius: 8,
                 border: activeSymbol === s ? "1px solid var(--primary)" : "1px solid transparent",
-                background: activeSymbol === s ? "oklch(0.6724 0.1308 38.7559 / 0.15)" : "transparent",
+                background: activeSymbol === s ? "var(--accent)" : "transparent",
                 color: activeSymbol === s ? "var(--primary)" : "var(--muted-foreground)",
                 fontSize: 12,
                 fontWeight: 800,
                 cursor: "pointer",
+                transition: "all 0.15s ease",
               }}
             >
-              {s}/USDC
+              {s}/USD
             </button>
           ))}
         </div>
@@ -280,11 +320,28 @@ export default function TradingViewChart({ symbol = "ETH", onSymbolChange }: Pro
         <div style={{ display: "flex", alignItems: "center", gap: 12 }}>
           <div style={{ display: "flex", alignItems: "center", gap: 6 }}>
             <Zap size={14} color="var(--primary)" />
-            <span style={{ fontSize: 11, fontWeight: 800, color: "var(--primary)" }}>0.2s Flashblocks</span>
+            <span style={{ fontSize: 11, fontWeight: 800, color: "var(--primary)" }}>Real-Time Live Feed</span>
           </div>
-          <div className="prism-mono" style={{ fontSize: 14, fontWeight: 800, color: "var(--foreground)" }}>
+          <div className="prism-mono" style={{ fontSize: 15, fontWeight: 800, color: "var(--foreground)" }}>
             {formatCurrencyValue(lastPrice)}
           </div>
+          <button
+            onClick={fetchRealCandles}
+            title="Refresh Real Market Data"
+            style={{
+              background: "var(--secondary)",
+              border: "1px solid var(--border)",
+              borderRadius: 8,
+              padding: "4px 8px",
+              color: "var(--foreground)",
+              cursor: "pointer",
+              display: "flex",
+              alignItems: "center",
+              justifyContent: "center",
+            }}
+          >
+            <RefreshCw size={13} className={loading ? "animate-spin" : ""} />
+          </button>
         </div>
       </div>
 
@@ -296,7 +353,7 @@ export default function TradingViewChart({ symbol = "ETH", onSymbolChange }: Pro
               key={tf.label}
               onClick={() => setTimeframe(tf.label)}
               style={{
-                padding: "3px 8px",
+                padding: "4px 10px",
                 borderRadius: 6,
                 border: "none",
                 cursor: "pointer",
@@ -318,10 +375,10 @@ export default function TradingViewChart({ symbol = "ETH", onSymbolChange }: Pro
               display: "flex",
               alignItems: "center",
               gap: 4,
-              padding: "3px 8px",
+              padding: "4px 10px",
               borderRadius: 6,
               border: "1px solid var(--border)",
-              background: showMA ? "oklch(0.6724 0.1308 38.7559 / 0.15)" : "transparent",
+              background: showMA ? "var(--accent)" : "transparent",
               color: showMA ? "var(--primary)" : "var(--muted-foreground)",
               fontSize: 11,
               fontWeight: 700,
@@ -338,10 +395,10 @@ export default function TradingViewChart({ symbol = "ETH", onSymbolChange }: Pro
               display: "flex",
               alignItems: "center",
               gap: 4,
-              padding: "3px 8px",
+              padding: "4px 10px",
               borderRadius: 6,
               border: "1px solid var(--border)",
-              background: showVolume ? "oklch(0.6724 0.1308 38.7559 / 0.15)" : "transparent",
+              background: showVolume ? "var(--accent)" : "transparent",
               color: showVolume ? "var(--primary)" : "var(--muted-foreground)",
               fontSize: 11,
               fontWeight: 700,
@@ -355,7 +412,12 @@ export default function TradingViewChart({ symbol = "ETH", onSymbolChange }: Pro
       </div>
 
       {/* Chart Canvas */}
-      <div style={{ height: 320, padding: "0.5rem", position: "relative" }}>
+      <div style={{ height: 340, padding: "0.5rem", position: "relative" }}>
+        {error && (
+          <div style={{ position: "absolute", top: 12, left: 12, color: "#ef4444", fontSize: 11, zIndex: 10 }}>
+            {error}
+          </div>
+        )}
         <div ref={containerRef} style={{ height: "100%", width: "100%" }} />
       </div>
     </div>

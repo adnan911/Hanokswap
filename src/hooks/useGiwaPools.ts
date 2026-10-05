@@ -12,8 +12,10 @@ import { giwaSepolia, GIWA_STANDARD_RPC } from '../chains';
 import {
   GIWA_POOL_WETH_USDC,
   GIWA_POOL_USDC_EURC,
+  GIWA_POOL_KRWC_FX,
   USDC_ADDRESS,
   EURC_ADDRESS,
+  KRWC_ADDRESS,
   GIWA_WETH,
 } from '../contracts';
 import indexedPoolsData from '../data/indexed-pools.json';
@@ -114,6 +116,19 @@ export function useGiwaPools(_provider?: EIP1193Provider, userAddress?: string) 
           symbol0: 'USDC',
           symbol1: 'EURC',
           decimals0: 6,
+          decimals1: 6,
+          poolType: 'STABLE',
+          feeTier: 100,
+          feePercent: '0.01%',
+        },
+        {
+          address: GIWA_POOL_KRWC_FX,
+          name: 'KRWC / USDC',
+          token0: KRWC_ADDRESS,
+          token1: USDC_ADDRESS,
+          symbol0: 'KRWC',
+          symbol1: 'USDC',
+          decimals0: 18,
           decimals1: 6,
           poolType: 'STABLE',
           feeTier: 100,

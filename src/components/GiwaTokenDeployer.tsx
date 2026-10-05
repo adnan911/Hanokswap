@@ -1,27 +1,35 @@
-import { useState } from 'react';
+import { useState, useEffect } from 'react';
 import type { EIP1193Provider, Address } from 'viem';
+import {
+  createWalletClient,
+  createPublicClient,
+  custom,
+  http,
+  parseUnits,
+} from 'viem';
+import { giwaSepolia, GIWA_FLASHBLOCKS_RPC } from '../chains';
 import { showToast } from '../toast';
 import { useLanguage } from '../LanguageContext';
 import { useIsMobile } from '../useIsMobile';
-import { useCurrency } from '../CurrencyContext';
+import { waitForSuccess } from '../txHelpers';
 import {
-  getLaunchpadTokens,
-  saveNewFairLaunchToken,
-  buyBondingCurveToken,
-  type FairLaunchToken,
-} from '../lib/launchpad';
+  saveDeployedToken,
+  getSavedDeployedTokens,
+  type DeployedTokenRecord,
+  STANDARD_ERC20_ABI,
+  STANDARD_ERC20_BYTECODE,
+  ANTI_SNIPE_TOKEN_ABI,
+  ANTI_SNIPE_TOKEN_BYTECODE,
+} from '../lib/tokenFactory';
 import {
-  getLiquidityLocks,
-  saveNewLiquidityLock,
-  type LiquidityLockRecord,
-} from '../lib/liquidityLocker';
-import {
-  PlusCircle,
-  BookOpen,
+  Coins,
   ShieldCheck,
-  Rocket,
-  Lock,
-  Flame,
+  Zap,
+  ExternalLink,
+  Copy,
+  Check,
+  Droplet,
+  Layers,
   ArrowRight,
 } from 'lucide-react';
 
@@ -32,138 +40,179 @@ interface Props {
   onNavigateToDocs?: () => void;
 }
 
-type DeployerTab = 'LAUNCHPAD' | 'STANDARD_ERC20' | 'LOCKER';
+type TokenType = 'STANDARD' | 'ANTI_SNIPE';
 
-export default function GiwaTokenDeployer({ provider, address, onNavigateToPools, onNavigateToDocs }: Props) {
+export default function GiwaTokenDeployer({ provider, address, onNavigateToPools }: Props) {
   const isMobile = useIsMobile();
   const { language } = useLanguage();
-  const { formatCurrencyValue } = useCurrency();
 
-  const [activeTab, setActiveTab] = useState<DeployerTab>('LAUNCHPAD');
-
-  // Launchpad State
-  const [launchpadTokens, setLaunchpadTokens] = useState<FairLaunchToken[]>(getLaunchpadTokens());
-  const [selectedTokenForBuy, setSelectedTokenForBuy] = useState<FairLaunchToken | null>(null);
-  const [buyEthAmount, setBuyEthAmount] = useState<string>('0.5');
-
-  // Create Fair Launch Token Modal State
-  const [showCreateFairTokenModal, setShowCreateFairTokenModal] = useState(false);
-  const [fairName, setFairName] = useState('');
-  const [fairSymbol, setFairSymbol] = useState('');
-  const [fairDesc, setFairDesc] = useState('');
-  const [fairIcon, setFairIcon] = useState('🚀');
-
-  // Standard ERC-20 State
+  const [tokenType, setTokenType] = useState<TokenType>('STANDARD');
   const [name, setName] = useState('');
   const [symbol, setSymbol] = useState('');
   const [decimals, setDecimals] = useState<number>(18);
   const [supply, setSupply] = useState<string>('1000000');
-  const [enableAntiSnipe, setEnableAntiSnipe] = useState(true);
-  const [requestDojangVerification, setRequestDojangVerification] = useState(true);
+  
+  // Anti-snipe settings
+  const [maxWalletBps, setMaxWalletBps] = useState<number>(100); // 1%
+  const [maxTxBps, setMaxTxBps] = useState<number>(50); // 0.5%
+  
   const [isDeploying, setIsDeploying] = useState(false);
   const [statusMsg, setStatusMsg] = useState('');
-  const [deployedToken, setDeployedToken] = useState<{ address: Address; name: string; symbol: string; supply: string } | null>(null);
+  const [recentToken, setRecentToken] = useState<DeployedTokenRecord | null>(null);
+  const [myTokens, setMyTokens] = useState<DeployedTokenRecord[]>([]);
+  const [copiedAddr, setCopiedAddr] = useState<string | null>(null);
 
-  // Liquidity Locker State
-  const [locks, setLocks] = useState<LiquidityLockRecord[]>(getLiquidityLocks());
-  const [showLockModal, setShowLockModal] = useState(false);
-  const [lockPoolName, setLockPoolName] = useState('WETH / USDC Pool');
-  const [lockAmountLP, setLockAmountLP] = useState('500.00');
-  const [lockDurationDays, setLockDurationDays] = useState<number>(365);
-  const [isPermanentBurn, setIsPermanentBurn] = useState(false);
+  const publicClient = createPublicClient({
+    chain: giwaSepolia,
+    transport: http(GIWA_FLASHBLOCKS_RPC),
+  });
 
-  const handleCreateFairToken = () => {
-    if (!fairName || !fairSymbol) {
-      showToast('Enter token name and symbol', 'error');
-      return;
-    }
-    const randHex = Array.from({ length: 40 }, () => Math.floor(Math.random() * 16).toString(16)).join('');
-    const tokenAddress = `0x${randHex}` as Address;
+  useEffect(() => {
+    setMyTokens(getSavedDeployedTokens(address));
+  }, [address]);
 
-    const newToken: FairLaunchToken = {
-      id: `tok-${Date.now()}`,
-      tokenAddress,
-      name: fairName,
-      symbol: fairSymbol.toUpperCase(),
-      creator: (address as Address) || ('0xDemoCreator' as Address),
-      description: fairDesc || 'Fair launch community token on Giwa Chain',
-      icon: fairIcon || '🚀',
-      ethRaised: 0.1,
-      graduationTargetETH: 20.0,
-      tokensSold: 4000000,
-      maxCurveSupply: 800000000,
-      marketCapUSD: 315,
-      currentPriceUSD: 0.00000039,
-      priceChange24hPct: +10.0,
-      holdersCount: 1,
-      isGraduated: false,
-      createdAt: Date.now(),
-      isDojangVerified: true,
-    };
-
-    saveNewFairLaunchToken(newToken);
-    setLaunchpadTokens(getLaunchpadTokens());
-    setShowCreateFairTokenModal(false);
-    setFairName('');
-    setFairSymbol('');
-    setFairDesc('');
-    showToast(`Fair Launch token $${newToken.symbol} deployed on Bonding Curve!`, 'success');
+  const copyToClipboard = (text: string) => {
+    navigator.clipboard.writeText(text);
+    setCopiedAddr(text);
+    setTimeout(() => setCopiedAddr(null), 2000);
+    showToast(language === 'ko' ? '주소가 복사되었습니다' : 'Address copied to clipboard', 'info');
   };
 
-  const handleBuyOnCurve = () => {
-    if (!selectedTokenForBuy || !buyEthAmount || parseFloat(buyEthAmount) <= 0) return;
-    const ethVal = parseFloat(buyEthAmount);
-    const { tokensReceived, isGraduated } = buyBondingCurveToken(selectedTokenForBuy.id, ethVal);
-    setLaunchpadTokens(getLaunchpadTokens());
-    setSelectedTokenForBuy(null);
-
-    if (isGraduated) {
-      showToast(`🎉 Bonding Curve 100% Filled! $${selectedTokenForBuy.symbol} graduated to Hanokswap CLAMM DEX!`, 'success');
-    } else {
-      showToast(`Bought ${tokensReceived.toLocaleString()} $${selectedTokenForBuy.symbol} on curve!`, 'success');
-    }
-  };
-
-  const handleCreateLock = () => {
-    if (!lockAmountLP || parseFloat(lockAmountLP) <= 0) return;
-    const randLockId = `lock-${Date.now().toString().slice(-4)}`;
-    const newLock: LiquidityLockRecord = {
-      lockId: randLockId,
-      lpTokenAddress: '0xE9c27006b15E681C0edE87a37Bbb678E7F201F7C' as Address,
-      poolName: lockPoolName,
-      ownerAddress: isPermanentBurn ? ('0x000000000000000000000000000000000000dEaD' as Address) : ((address as Address) || ('0xDemo' as Address)),
-      amountLP: lockAmountLP,
-      valueUSD: parseFloat(lockAmountLP) * 300,
-      unlockTimestamp: isPermanentBurn ? 253402300799000 : Date.now() + lockDurationDays * 86400000,
-      isBurntPermanently: isPermanentBurn,
-      isWithdrawn: false,
-      projectName: 'Community Verified Project',
-      createdAt: Date.now(),
-    };
-
-    saveNewLiquidityLock(newLock);
-    setLocks(getLiquidityLocks());
-    setShowLockModal(false);
-    showToast(isPermanentBurn ? 'LP Tokens permanently burnt to 0xDead!' : `LP Tokens locked for ${lockDurationDays} days!`, 'success');
-  };
-
-  const handleDeployStandardERC20 = async () => {
-    if (!provider || !address) {
-      showToast('Connect your wallet to deploy', 'error');
+  const handleAddTokenToWallet = async (token: DeployedTokenRecord) => {
+    if (!provider) {
+      showToast(language === 'ko' ? '지갑을 먼저 연결해주세요' : 'Please connect your wallet first', 'error');
       return;
     }
-    if (!name.trim() || !symbol.trim() || !supply.trim()) {
-      showToast('Please fill all token parameters', 'error');
-      return;
-    }
-
-    setIsDeploying(true);
-    setStatusMsg('Deploying ERC-20 on Giwa Chain...');
     try {
-      setDeployedToken(null);
-      throw new Error('ERC-20 deployment is not connected yet. No token was deployed.');
-    } catch (err: any) {
-      showToast(err?.message || 'Deployment failed', 'error');
+      await provider.request({
+        method: 'wallet_watchAsset',
+        params: {
+          type: 'ERC20',
+          options: {
+            address: token.address,
+            symbol: token.symbol,
+            decimals: token.decimals,
+          },
+        } as any,
+      });
+      showToast(language === 'ko' ? '지갑에 토큰이 추가되었습니다!' : 'Token added to wallet!', 'success');
+    } catch (err) {
+      console.warn(err);
+    }
+  };
+
+  const handleDeployToken = async () => {
+    if (!provider || !address) {
+      showToast(language === 'ko' ? '지갑을 연결해야 토큰을 배포할 수 있습니다.' : 'Connect your wallet to deploy on GIWA Sepolia', 'error');
+      return;
+    }
+    if (!name.trim()) {
+      showToast(language === 'ko' ? '토큰 이름을 입력하세요' : 'Enter token name', 'error');
+      return;
+    }
+    if (!symbol.trim()) {
+      showToast(language === 'ko' ? '토큰 심볼을 입력하세요' : 'Enter token symbol', 'error');
+      return;
+    }
+    if (!supply || parseFloat(supply) <= 0) {
+      showToast(language === 'ko' ? '발행 수량을 올바르게 입력하세요' : 'Enter a valid initial supply', 'error');
+      return;
+    }
+
+    try {
+      setIsDeploying(true);
+      setStatusMsg(language === 'ko' ? '트랜잭션 서명 대기 중...' : 'Waiting for wallet confirmation...');
+
+      const walletClient = createWalletClient({
+        account: address as Address,
+        chain: giwaSepolia,
+        transport: custom(provider),
+      });
+
+      let deployHash: `0x${string}`;
+
+      if (tokenType === 'STANDARD') {
+        setStatusMsg(language === 'ko' ? 'GIWA Sepolia에 표준 ERC-20 스마트 컨트랙트 배포 중...' : 'Deploying standard ERC-20 on GIWA Sepolia...');
+        
+        deployHash = await walletClient.deployContract({
+          abi: STANDARD_ERC20_ABI,
+          bytecode: STANDARD_ERC20_BYTECODE,
+          args: [name.trim(), symbol.trim().toUpperCase(), decimals],
+        });
+      } else {
+        setStatusMsg(language === 'ko' ? 'GIWA Sepolia에 안티스나이퍼 런치 토큰 배포 중...' : 'Deploying Anti-Snipe Launch Token on GIWA Sepolia...');
+        
+        const initialSupplyBigInt = BigInt(Math.floor(parseFloat(supply)));
+        const zeroBytes32 = '0x0000000000000000000000000000000000000000000000000000000000000000' as `0x${string}`;
+
+        deployHash = await walletClient.deployContract({
+          abi: ANTI_SNIPE_TOKEN_ABI,
+          bytecode: ANTI_SNIPE_TOKEN_BYTECODE,
+          args: [
+            name.trim(),
+            symbol.trim().toUpperCase(),
+            decimals,
+            initialSupplyBigInt,
+            BigInt(maxWalletBps),
+            BigInt(maxTxBps),
+            zeroBytes32,
+          ],
+        });
+      }
+
+      setStatusMsg(language === 'ko' ? '200ms Flashblocks 컨펌 대기 중...' : 'Confirming on GIWA Sepolia Flashblocks...');
+      
+      const receipt = await waitForSuccess(publicClient, deployHash);
+      const contractAddress = receipt.contractAddress;
+
+      if (!contractAddress) {
+        throw new Error('Contract address not found in transaction receipt');
+      }
+
+      // If standard token, mint initial supply to deployer
+      if (tokenType === 'STANDARD') {
+        setStatusMsg(language === 'ko' ? '발행자 주소로 초기 공급량 민팅 중...' : 'Minting initial supply to deployer...');
+        const mintAmount = parseUnits(supply, decimals);
+        const mintHash = await walletClient.writeContract({
+          address: contractAddress,
+          abi: STANDARD_ERC20_ABI,
+          functionName: 'mint',
+          args: [address as Address, mintAmount],
+        });
+        await waitForSuccess(publicClient, mintHash);
+      }
+
+      const record: DeployedTokenRecord = {
+        address: contractAddress,
+        name: name.trim(),
+        symbol: symbol.trim().toUpperCase(),
+        decimals,
+        initialSupply: supply,
+        type: tokenType,
+        txHash: deployHash,
+        deployer: address as Address,
+        timestamp: Date.now(),
+        hasFaucet: tokenType === 'STANDARD',
+      };
+
+      saveDeployedToken(record);
+      setRecentToken(record);
+      setMyTokens(getSavedDeployedTokens(address));
+
+      showToast(
+        language === 'ko'
+          ? `$${record.symbol} 토큰이 GIWA Sepolia에 성공적으로 배포되었습니다!`
+          : `$${record.symbol} successfully deployed on GIWA Sepolia!`,
+        'success'
+      );
+
+      // Reset fields
+      setName('');
+      setSymbol('');
+      setSupply('1000000');
+    } catch (err: unknown) {
+      console.error('Deploy error:', err);
+      showToast(err instanceof Error ? err.message : 'Deployment failed', 'error');
     } finally {
       setIsDeploying(false);
       setStatusMsg('');
@@ -171,452 +220,435 @@ export default function GiwaTokenDeployer({ provider, address, onNavigateToPools
   };
 
   return (
-    <div style={{ display: 'flex', flexDirection: 'column', gap: '1.5rem', maxWidth: isMobile ? 460 : 960, margin: '0 auto' }}>
-      {/* Header Banner */}
+    <div style={{ display: 'flex', flexDirection: 'column', gap: '2rem', maxWidth: isMobile ? '100%' : 780, margin: '0 auto' }}>
+      
+      {/* Network & Live Status Badge */}
       <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', flexWrap: 'wrap', gap: 12 }}>
-        <div>
-          <div style={{ display: 'flex', alignItems: 'center', gap: 8 }}>
-            <span style={{ fontSize: 11, fontWeight: 800, padding: '3px 8px', borderRadius: 999, background: 'var(--primary)', color: '#FFFFFF' }}>
-              GIWA LAUNCHPAD &amp; FACTORY
-            </span>
-            <span style={{ fontSize: 12, color: 'var(--muted-foreground)' }}>⚡ 0.2s Flashblocks Deployment</span>
-          </div>
+        <div style={{ display: 'flex', alignItems: 'center', gap: 8 }}>
+          <span style={{ fontSize: 12, fontWeight: 800, padding: '4px 10px', borderRadius: 999, background: 'var(--primary)', color: '#FFFFFF', letterSpacing: '0.02em' }}>
+            GIWA SEPOLIA TOKEN DEPLOYER
+          </span>
+          <span style={{ fontSize: 12, color: 'var(--muted-foreground)', display: 'flex', alignItems: 'center', gap: 4 }}>
+            <Zap size={13} color="var(--primary)" />
+            <span>Chain ID: 91342 (200ms Flashblocks)</span>
+          </span>
         </div>
-
-        {onNavigateToDocs && (
-          <button
-            onClick={onNavigateToDocs}
-            style={{ display: 'flex', alignItems: 'center', gap: 6, padding: '6px 14px', borderRadius: 10, border: '1px solid var(--border)', background: 'var(--card)', color: 'var(--foreground)', fontSize: 12, fontWeight: 700, cursor: 'pointer' }}
-          >
-            <BookOpen size={13} color="var(--primary)" />
-            <span>Launchpad Docs</span>
-          </button>
-        )}
       </div>
 
-      {/* Mode Switcher */}
-      <div style={{ display: 'flex', gap: 8, background: 'var(--card)', padding: 6, borderRadius: 16, border: '1px solid var(--border)', overflowX: 'auto' }}>
-        {[
-          { id: 'LAUNCHPAD', label: language === 'ko' ? '본딩커브 런치패드' : 'Bonding Curve Launchpad', desc: language === 'ko' ? '공정 발행 모델' : 'Fair launch bonding model' },
-          { id: 'STANDARD_ERC20', label: language === 'ko' ? 'ERC-20 토큰 생성' : 'Standard ERC-20', desc: language === 'ko' ? '안티 스나이핑 보호' : 'Anti-snipe protection' },
-          { id: 'LOCKER', label: language === 'ko' ? '유동성 락커' : 'Liquidity Locker', desc: language === 'ko' ? 'LP 락업 & 소각' : 'Proof of LP lock' },
-        ].map((tab) => (
+      {/* Deploy Success Card (If newly deployed) */}
+      {recentToken && (
+        <div className="uniswap-card" style={{ padding: '1.5rem', border: '1px solid rgba(34, 197, 94, 0.4)', background: 'rgba(34, 197, 94, 0.05)' }}>
+          <div style={{ display: 'flex', alignItems: 'center', gap: 10, marginBottom: 12 }}>
+            <div style={{ width: 32, height: 32, borderRadius: '50%', background: '#22c55e', display: 'flex', alignItems: 'center', justifyContent: 'center', color: '#FFFFFF' }}>
+              <Check size={18} />
+            </div>
+            <div>
+              <div style={{ fontSize: 17, fontWeight: 800, color: 'var(--foreground)' }}>
+                {language === 'ko' ? '토큰 배포 완료!' : 'Token Deployed Successfully!'}
+              </div>
+              <div style={{ fontSize: 12.5, color: 'var(--muted-foreground)' }}>
+                ${recentToken.symbol} ({recentToken.name}) · {parseFloat(recentToken.initialSupply).toLocaleString()} Supply
+              </div>
+            </div>
+          </div>
+
+          <div style={{ display: 'flex', flexDirection: 'column', gap: 10, background: 'var(--input)', padding: '12px 16px', borderRadius: 14, border: '1px solid var(--border)' }}>
+            <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', flexWrap: 'wrap', gap: 8 }}>
+              <span style={{ fontSize: 12, color: 'var(--muted-foreground)', fontWeight: 600 }}>Contract Address:</span>
+              <div style={{ display: 'flex', alignItems: 'center', gap: 6 }}>
+                <span style={{ fontSize: 12.5, fontFamily: 'var(--font-mono)', color: 'var(--foreground)', fontWeight: 700 }}>
+                  {recentToken.address}
+                </span>
+                <button
+                  onClick={() => copyToClipboard(recentToken.address)}
+                  style={{ background: 'none', border: 'none', color: 'var(--muted-foreground)', cursor: 'pointer', display: 'flex', alignItems: 'center' }}
+                  title="Copy"
+                >
+                  {copiedAddr === recentToken.address ? <Check size={14} color="#22c55e" /> : <Copy size={14} />}
+                </button>
+              </div>
+            </div>
+          </div>
+
+          <div style={{ display: 'flex', gap: 10, marginTop: 14, flexWrap: 'wrap' }}>
+            <a
+              href={`https://sepolia-explorer.giwa.io/address/${recentToken.address}`}
+              target="_blank"
+              rel="noopener noreferrer"
+              style={{
+                display: 'inline-flex',
+                alignItems: 'center',
+                gap: 6,
+                padding: '8px 14px',
+                borderRadius: 10,
+                background: 'var(--secondary)',
+                border: '1px solid var(--border)',
+                color: 'var(--foreground)',
+                fontSize: 12.5,
+                fontWeight: 700,
+                textDecoration: 'none',
+              }}
+            >
+              <span>{language === 'ko' ? 'GIWA 익스플로러 보기' : 'View on Explorer'}</span>
+              <ExternalLink size={13} />
+            </a>
+
+            <button
+              onClick={() => handleAddTokenToWallet(recentToken)}
+              style={{
+                display: 'inline-flex',
+                alignItems: 'center',
+                gap: 6,
+                padding: '8px 14px',
+                borderRadius: 10,
+                background: 'var(--secondary)',
+                border: '1px solid var(--border)',
+                color: 'var(--foreground)',
+                fontSize: 12.5,
+                fontWeight: 700,
+                cursor: 'pointer',
+              }}
+            >
+              <Coins size={13} color="var(--primary)" />
+              <span>{language === 'ko' ? '지갑에 추가' : 'Add to Wallet'}</span>
+            </button>
+
+            {onNavigateToPools && (
+              <button
+                onClick={onNavigateToPools}
+                style={{
+                  display: 'inline-flex',
+                  alignItems: 'center',
+                  gap: 6,
+                  padding: '8px 14px',
+                  borderRadius: 10,
+                  background: 'var(--primary)',
+                  border: 'none',
+                  color: '#FFFFFF',
+                  fontSize: 12.5,
+                  fontWeight: 800,
+                  cursor: 'pointer',
+                  marginLeft: 'auto',
+                }}
+              >
+                <Droplet size={13} />
+                <span>{language === 'ko' ? 'DEX 풀 생성하기' : 'Create DEX Pool'}</span>
+                <ArrowRight size={13} />
+              </button>
+            )}
+          </div>
+        </div>
+      )}
+
+      {/* Main Token Deployer Form Card */}
+      <div className="uniswap-card" style={{ padding: isMobile ? '1.5rem 1.25rem' : '2rem' }}>
+        <div style={{ marginBottom: '1.5rem' }}>
+          <h2 style={{ fontSize: 20, fontWeight: 800, color: 'var(--foreground)', marginBottom: 4 }}>
+            {language === 'ko' ? '새 토큰 생성 & 배포' : 'Create & Deploy Real Token'}
+          </h2>
+          <p style={{ fontSize: 13, color: 'var(--muted-foreground)' }}>
+            {language === 'ko'
+              ? 'GIWA Sepolia 스마트 컨트랙트로 실시간 배포되어 즉시 HanokSwap 풀 및 거래가 가능합니다.'
+              : 'Deploy a real smart contract directly on GIWA Sepolia Layer 2 with instant DEX pool compatibility.'}
+          </p>
+        </div>
+
+        {/* Token Standard Selector */}
+        <div style={{ display: 'grid', gridTemplateColumns: isMobile ? '1fr' : '1fr 1fr', gap: 12, marginBottom: '1.5rem' }}>
           <button
-            key={tab.id}
-            onClick={() => setActiveTab(tab.id as DeployerTab)}
+            onClick={() => setTokenType('STANDARD')}
             style={{
-              flex: 1,
-              padding: '10px 14px',
-              borderRadius: 12,
-              border: activeTab === tab.id ? '1px solid var(--primary)' : '1px solid transparent',
-              background: activeTab === tab.id ? 'oklch(0.6724 0.1308 38.7559 / 0.15)' : 'transparent',
-              color: activeTab === tab.id ? 'var(--primary)' : 'var(--muted-foreground)',
-              fontWeight: 800,
-              fontSize: 13,
+              padding: '1rem',
+              borderRadius: 16,
+              border: tokenType === 'STANDARD' ? '1.5px solid var(--primary)' : '1px solid var(--border)',
+              background: tokenType === 'STANDARD' ? 'var(--accent)' : 'var(--input)',
+              textAlign: 'left',
               cursor: 'pointer',
-              whiteSpace: 'nowrap',
-              textAlign: 'center',
+              display: 'flex',
+              flexDirection: 'column',
+              gap: 6,
             }}
           >
-            <div>{tab.label}</div>
-            <div style={{ fontSize: 10, fontWeight: 500, color: 'var(--muted-foreground)', marginTop: 2 }}>{tab.desc}</div>
+            <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between' }}>
+              <span style={{ fontSize: 14.5, fontWeight: 800, color: tokenType === 'STANDARD' ? 'var(--primary)' : 'var(--foreground)' }}>
+                Standard ERC-20
+              </span>
+              <Coins size={16} color={tokenType === 'STANDARD' ? 'var(--primary)' : 'var(--muted-foreground)'} />
+            </div>
+            <span style={{ fontSize: 11.5, color: 'var(--muted-foreground)', lineHeight: 1.4 }}>
+              {language === 'ko'
+                ? '표준 공급량 민팅 + 테스트넷 Faucet 내장. 빠르고 유연한 테스트용 토큰.'
+                : '100% supply minted to deployer + built-in testnet faucet for testing.'}
+            </span>
           </button>
-        ))}
-      </div>
-
-      {/* TAB 1: BONDING CURVE FAIR LAUNCHPAD */}
-      {activeTab === 'LAUNCHPAD' && (
-        <div style={{ display: 'flex', flexDirection: 'column', gap: 16 }}>
-          <div style={{ padding: 16, borderRadius: 16, background: 'oklch(0.6724 0.1308 38.7559 / 0.12)', border: '1px solid var(--border)', display: 'flex', justifyContent: 'space-between', alignItems: 'center', flexWrap: 'wrap', gap: 12 }}>
-            <div style={{ display: 'flex', alignItems: 'center', gap: 12 }}>
-              <Rocket size={26} color="var(--primary)" />
-              <div>
-                <div style={{ fontSize: 15, fontWeight: 800, color: 'var(--foreground)' }}>
-                  {language === 'ko' ? '100% 공정 발행 (Fair Launch) 본딩커브' : '100% Fair Launch Bonding Curve'}
-                </div>
-                <div style={{ fontSize: 12, color: 'var(--muted-foreground)' }}>
-                  {language === 'ko'
-                    ? '초기 유동성 필요 없음 · 누구나 생성 가능 · 20 ETH 모집 시 하옥스왑 CLAMM 풀 자동 이전 및 LP 영구 락업'
-                    : 'Zero seed capital needed. Auto-graduates to Hanokswap CLAMM and locks LP when 20 ETH is raised.'}
-                </div>
-              </div>
-            </div>
-
-            <button
-              onClick={() => setShowCreateFairTokenModal(true)}
-              style={{ padding: '10px 18px', borderRadius: 12, border: 'none', background: 'var(--primary)', color: '#fff', fontSize: 13, fontWeight: 800, cursor: 'pointer', display: 'flex', alignItems: 'center', gap: 6, boxShadow: '0 4px 14px oklch(0.6724 0.1308 38.7559 / 0.35)' }}
-            >
-              <PlusCircle size={16} />
-              <span>{language === 'ko' ? '새 토큰 런치하기' : 'Create Fair Token'}</span>
-            </button>
-          </div>
-
-          {/* Tokens Grid */}
-          <div style={{ display: 'grid', gridTemplateColumns: isMobile ? '1fr' : 'repeat(3, 1fr)', gap: 16 }}>
-            {launchpadTokens.map((token) => {
-              const progressPct = Math.min(100, Math.round((token.ethRaised / token.graduationTargetETH) * 100));
-              return (
-                <div
-                  key={token.id}
-                  style={{
-                    background: 'var(--card)',
-                    border: '1px solid var(--border)',
-                    borderRadius: 20,
-                    padding: 18,
-                    display: 'flex',
-                    flexDirection: 'column',
-                    justifyContent: 'space-between',
-                    gap: 14,
-                    boxShadow: '0 10px 28px rgba(0,0,0,0.15)',
-                  }}
-                >
-                  <div>
-                    <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'flex-start', marginBottom: 10 }}>
-                      <div style={{ display: 'flex', alignItems: 'center', gap: 10 }}>
-                        <span style={{ fontSize: 32 }}>{token.icon}</span>
-                        <div>
-                          <div style={{ fontSize: 15, fontWeight: 800, color: 'var(--foreground)', display: 'flex', alignItems: 'center', gap: 4 }}>
-                            {token.name}
-                            {token.isDojangVerified && (
-                              <span title="Dojang Verified Project">
-                                <ShieldCheck size={14} color="#3b82f6" />
-                              </span>
-                            )}
-                          </div>
-                          <div style={{ fontSize: 11, color: 'var(--muted-foreground)' }}>${token.symbol} · by {token.creatorUpId || token.creator.slice(0, 6)}</div>
-                        </div>
-                      </div>
-                      {token.isGraduated ? (
-                        <span style={{ fontSize: 10, padding: '2px 8px', borderRadius: 999, background: 'rgba(34, 197, 94, 0.15)', color: '#22c55e', fontWeight: 800, border: '1px solid rgba(34, 197, 94, 0.3)' }}>
-                          🎓 GRADUATED
-                        </span>
-                      ) : (
-                        <span style={{ fontSize: 10, padding: '2px 8px', borderRadius: 999, background: 'rgba(59, 130, 246, 0.15)', color: '#3b82f6', fontWeight: 800 }}>
-                          ON CURVE
-                        </span>
-                      )}
-                    </div>
-
-                    <p style={{ fontSize: 12, color: 'var(--muted-foreground)', lineHeight: 1.4, margin: '0 0 12px 0', minHeight: 34 }}>
-                      {token.description}
-                    </p>
-
-                    <div style={{ background: 'var(--muted)', padding: 10, borderRadius: 12, marginBottom: 12 }}>
-                      <div style={{ display: 'flex', justifyContent: 'space-between', fontSize: 11, color: 'var(--muted-foreground)', marginBottom: 4 }}>
-                        <span>Bonding Curve Progress</span>
-                        <span style={{ fontWeight: 800, color: 'var(--foreground)' }}>{progressPct}% ({token.ethRaised} / 20 ETH)</span>
-                      </div>
-                      <div style={{ width: '100%', height: 6, background: 'var(--border)', borderRadius: 999, overflow: 'hidden' }}>
-                        <div style={{ width: `${progressPct}%`, height: '100%', background: token.isGraduated ? '#22c55e' : 'var(--primary)', borderRadius: 999, transition: 'width 0.3s' }} />
-                      </div>
-                    </div>
-
-                    <div style={{ display: 'flex', justifyContent: 'space-between', fontSize: 11, color: 'var(--muted-foreground)' }}>
-                      <span>Market Cap: <strong style={{ color: 'var(--foreground)' }}>{formatCurrencyValue(token.marketCapUSD)}</strong></span>
-                      <span>Holders: <strong style={{ color: 'var(--foreground)' }}>{token.holdersCount}</strong></span>
-                    </div>
-                  </div>
-
-                  <button
-                    onClick={() => {
-                      if (token.isGraduated) {
-                        onNavigateToPools?.();
-                      } else {
-                        setSelectedTokenForBuy(token);
-                      }
-                    }}
-                    style={{
-                      width: '100%',
-                      padding: '10px',
-                      borderRadius: 12,
-                      border: 'none',
-                      background: token.isGraduated ? 'var(--muted)' : 'var(--primary)',
-                      color: token.isGraduated ? 'var(--foreground)' : '#fff',
-                      fontSize: 13,
-                      fontWeight: 800,
-                      cursor: 'pointer',
-                      display: 'flex',
-                      alignItems: 'center',
-                      justifyContent: 'center',
-                      gap: 6,
-                    }}
-                  >
-                    {token.isGraduated ? (
-                      <span>Trade on Hanok DEX</span>
-                    ) : (
-                      <>
-                        <span>Buy on Curve</span>
-                        <ArrowRight size={14} />
-                      </>
-                    )}
-                  </button>
-                </div>
-              );
-            })}
-          </div>
-        </div>
-      )}
-
-      {/* TAB 2: STANDARD ERC-20 DEPLOYER */}
-      {activeTab === 'STANDARD_ERC20' && (
-        <div style={{ background: 'var(--card)', border: '1px solid var(--border)', borderRadius: 24, padding: '2rem', boxShadow: '0 20px 48px rgba(0,0,0,0.2)' }}>
-          <div style={{ fontSize: 16, fontWeight: 800, color: 'var(--foreground)', marginBottom: 16 }}>
-            {language === 'ko' ? '보안 강화형 ERC-20 토큰 배포기' : 'Deploy Verified ERC-20 Token'}
-          </div>
-
-          <div style={{ display: 'grid', gridTemplateColumns: isMobile ? '1fr' : '1fr 1fr', gap: 14, marginBottom: 16 }}>
-            <div>
-              <label style={{ fontSize: 12, fontWeight: 700, color: 'var(--foreground)', display: 'block', marginBottom: 6 }}>Token Name</label>
-              <input
-                type="text"
-                placeholder="e.g. Dunamu Won"
-                value={name}
-                onChange={(e) => setName(e.target.value)}
-                style={{ width: '100%', background: 'var(--muted)', border: '1px solid var(--border)', borderRadius: 12, padding: '10px 14px', fontSize: 14, color: 'var(--foreground)', outline: 'none' }}
-              />
-            </div>
-
-            <div>
-              <label style={{ fontSize: 12, fontWeight: 700, color: 'var(--foreground)', display: 'block', marginBottom: 6 }}>Token Symbol</label>
-              <input
-                type="text"
-                placeholder="e.g. DWON"
-                value={symbol}
-                onChange={(e) => setSymbol(e.target.value)}
-                style={{ width: '100%', background: 'var(--muted)', border: '1px solid var(--border)', borderRadius: 12, padding: '10px 14px', fontSize: 14, color: 'var(--foreground)', outline: 'none' }}
-              />
-            </div>
-          </div>
-
-          <div style={{ display: 'grid', gridTemplateColumns: isMobile ? '1fr' : '1fr 1fr', gap: 14, marginBottom: 16 }}>
-            <div>
-              <label style={{ fontSize: 12, fontWeight: 700, color: 'var(--foreground)', display: 'block', marginBottom: 6 }}>Total Supply</label>
-              <input
-                type="text"
-                placeholder="1000000"
-                value={supply}
-                onChange={(e) => setSupply(e.target.value)}
-                style={{ width: '100%', background: 'var(--muted)', border: '1px solid var(--border)', borderRadius: 12, padding: '10px 14px', fontSize: 14, color: 'var(--foreground)', outline: 'none' }}
-              />
-            </div>
-
-            <div>
-              <label style={{ fontSize: 12, fontWeight: 700, color: 'var(--foreground)', display: 'block', marginBottom: 6 }}>Decimals</label>
-              <input
-                type="number"
-                value={decimals}
-                onChange={(e) => setDecimals(Number(e.target.value))}
-                style={{ width: '100%', background: 'var(--muted)', border: '1px solid var(--border)', borderRadius: 12, padding: '10px 14px', fontSize: 14, color: 'var(--foreground)', outline: 'none' }}
-              />
-            </div>
-          </div>
-
-          {/* Launch Guards Toggle */}
-          <div style={{ display: 'flex', flexDirection: 'column', gap: 10, background: 'var(--muted)', padding: 14, borderRadius: 14, marginBottom: 20 }}>
-            <label style={{ display: 'flex', alignItems: 'center', gap: 8, fontSize: 12, fontWeight: 700, color: 'var(--foreground)', cursor: 'pointer' }}>
-              <input type="checkbox" checked={enableAntiSnipe} onChange={(e) => setEnableAntiSnipe(e.target.checked)} style={{ accentColor: 'var(--primary)', width: 16, height: 16 }} />
-              <span>🛡️ Enable Anti-Snipe &amp; Max Wallet Protection (Max 1% Wallet / 0.5% TX / 30s Cooldown)</span>
-            </label>
-            <label style={{ display: 'flex', alignItems: 'center', gap: 8, fontSize: 12, fontWeight: 700, color: 'var(--foreground)', cursor: 'pointer' }}>
-              <input type="checkbox" checked={requestDojangVerification} onChange={(e) => setRequestDojangVerification(e.target.checked)} style={{ accentColor: 'var(--primary)', width: 16, height: 16 }} />
-              <span>📜 Mint Dunamu Dojang Project Attestation Proof</span>
-            </label>
-          </div>
 
           <button
-            onClick={handleDeployStandardERC20}
-            disabled={isDeploying}
-            style={{ width: '100%', padding: '14px', borderRadius: 14, border: 'none', background: 'var(--primary)', color: '#fff', fontSize: 14, fontWeight: 800, cursor: isDeploying ? 'not-allowed' : 'pointer' }}
+            onClick={() => setTokenType('ANTI_SNIPE')}
+            style={{
+              padding: '1rem',
+              borderRadius: 16,
+              border: tokenType === 'ANTI_SNIPE' ? '1.5px solid var(--primary)' : '1px solid var(--border)',
+              background: tokenType === 'ANTI_SNIPE' ? 'var(--accent)' : 'var(--input)',
+              textAlign: 'left',
+              cursor: 'pointer',
+              display: 'flex',
+              flexDirection: 'column',
+              gap: 6,
+            }}
           >
-            {isDeploying ? (statusMsg || 'Deploying...') : 'Deploy Token on Giwa L2'}
+            <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between' }}>
+              <span style={{ fontSize: 14.5, fontWeight: 800, color: tokenType === 'ANTI_SNIPE' ? 'var(--primary)' : 'var(--foreground)' }}>
+                Anti-Snipe Launch Token
+              </span>
+              <ShieldCheck size={16} color={tokenType === 'ANTI_SNIPE' ? 'var(--primary)' : 'var(--muted-foreground)'} />
+            </div>
+            <span style={{ fontSize: 11.5, color: 'var(--muted-foreground)', lineHeight: 1.4 }}>
+              {language === 'ko'
+                ? '최대 지갑 한도(1%) + 최대 거래 한도(0.5%) + 30초 쿨다운으로 봇 스나이핑 방어.'
+                : 'Built-in 1% Max-Wallet, 0.5% Max-TX limits & 30s block anti-sniper cooldown.'}
+            </span>
           </button>
-
-          {deployedToken && (
-            <div style={{ marginTop: 16, padding: 14, borderRadius: 14, background: 'rgba(34, 197, 94, 0.1)', border: '1px solid #22c55e', fontSize: 12 }}>
-              <div style={{ fontWeight: 800, color: '#22c55e', marginBottom: 4 }}>🎉 Token Successfully Deployed!</div>
-              <div className="prism-mono" style={{ color: 'var(--foreground)' }}>Address: {deployedToken.address}</div>
-            </div>
-          )}
         </div>
-      )}
 
-      {/* TAB 3: LP LIQUIDITY LOCKER */}
-      {activeTab === 'LOCKER' && (
-        <div style={{ display: 'flex', flexDirection: 'column', gap: 16 }}>
-          <div style={{ padding: 16, borderRadius: 16, background: 'oklch(0.6724 0.1308 38.7559 / 0.12)', border: '1px solid var(--border)', display: 'flex', justifyContent: 'space-between', alignItems: 'center', flexWrap: 'wrap', gap: 12 }}>
-            <div style={{ display: 'flex', alignItems: 'center', gap: 12 }}>
-              <Lock size={26} color="var(--primary)" />
-              <div>
-                <div style={{ fontSize: 15, fontWeight: 800, color: 'var(--foreground)' }}>
-                  {language === 'ko' ? '암호화 유동성 락커 & 영구 소각기' : 'Cryptographic LP Token Locker & Burner'}
-                </div>
-                <div style={{ fontSize: 12, color: 'var(--muted-foreground)' }}>
-                  {language === 'ko'
-                    ? '러그풀(Rug-pull) 방지 및 신뢰 증명을 위해 DEX LP 토큰을 타임락하거나 영구 소각(0xDead)하세요.'
-                    : 'Time-lock or burn LP tokens to prove protocol transparency and protect investors.'}
-                </div>
+        {/* Inputs */}
+        <div style={{ display: 'flex', flexDirection: 'column', gap: '1.25rem' }}>
+          
+          <div style={{ display: 'grid', gridTemplateColumns: isMobile ? '1fr' : '1fr 1fr', gap: 12 }}>
+            <div>
+              <label style={{ display: 'block', fontSize: 12.5, fontWeight: 700, color: 'var(--foreground)', marginBottom: 6 }}>
+                {language === 'ko' ? '토큰 이름 (Name)' : 'Token Name'}
+              </label>
+              <div className="uniswap-input-box" style={{ padding: '0.75rem 1rem' }}>
+                <input
+                  type="text"
+                  placeholder="e.g. Hanok Finance"
+                  value={name}
+                  onChange={(e) => setName(e.target.value)}
+                  style={{ width: '100%', background: 'transparent', border: 'none', outline: 'none', color: 'var(--foreground)', fontSize: 14, fontWeight: 600 }}
+                />
               </div>
             </div>
 
-            <button
-              onClick={() => setShowLockModal(true)}
-              style={{ padding: '10px 18px', borderRadius: 12, border: 'none', background: 'var(--primary)', color: '#fff', fontSize: 13, fontWeight: 800, cursor: 'pointer', display: 'flex', alignItems: 'center', gap: 6 }}
-            >
-              <Lock size={16} />
-              <span>{language === 'ko' ? 'LP 락업 / 소각하기' : 'Lock / Burn LP'}</span>
-            </button>
+            <div>
+              <label style={{ display: 'block', fontSize: 12.5, fontWeight: 700, color: 'var(--foreground)', marginBottom: 6 }}>
+                {language === 'ko' ? '토큰 심볼 (Symbol)' : 'Token Symbol'}
+              </label>
+              <div className="uniswap-input-box" style={{ padding: '0.75rem 1rem' }}>
+                <input
+                  type="text"
+                  placeholder="e.g. HANOK"
+                  value={symbol}
+                  onChange={(e) => setSymbol(e.target.value.toUpperCase())}
+                  style={{ width: '100%', background: 'transparent', border: 'none', outline: 'none', color: 'var(--foreground)', fontSize: 14, fontWeight: 700, textTransform: 'uppercase' }}
+                />
+              </div>
+            </div>
           </div>
 
-          <div style={{ display: 'grid', gridTemplateColumns: isMobile ? '1fr' : 'repeat(2, 1fr)', gap: 16 }}>
-            {locks.map((lk) => (
-              <div key={lk.lockId} style={{ background: 'var(--card)', border: '1px solid var(--border)', borderRadius: 20, padding: 20 }}>
-                <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'flex-start', marginBottom: 10 }}>
-                  <div>
-                    <div style={{ fontSize: 15, fontWeight: 800, color: 'var(--foreground)' }}>{lk.poolName}</div>
-                    <div style={{ fontSize: 11, color: 'var(--muted-foreground)' }}>Project: {lk.projectName}</div>
-                  </div>
-                  {lk.isBurntPermanently ? (
-                    <span style={{ fontSize: 10, padding: '3px 8px', borderRadius: 999, background: 'rgba(239, 68, 68, 0.15)', color: '#ef4444', fontWeight: 800, display: 'flex', alignItems: 'center', gap: 4 }}>
-                      <Flame size={12} /> BURNT FOREVER
-                    </span>
-                  ) : (
-                    <span style={{ fontSize: 10, padding: '3px 8px', borderRadius: 999, background: 'rgba(59, 130, 246, 0.15)', color: '#3b82f6', fontWeight: 800, display: 'flex', alignItems: 'center', gap: 4 }}>
-                      <Lock size={12} /> TIME-LOCKED
-                    </span>
-                  )}
-                </div>
-
-                <div style={{ background: 'var(--muted)', padding: 12, borderRadius: 14, marginBottom: 12 }}>
-                  <div style={{ fontSize: 11, color: 'var(--muted-foreground)' }}>Locked LP Value</div>
-                  <div style={{ fontSize: 18, fontWeight: 800, color: 'var(--foreground)' }}>{formatCurrencyValue(lk.valueUSD)}</div>
-                  <div style={{ fontSize: 10, color: 'var(--muted-foreground)', marginTop: 2 }}>{lk.amountLP} LP Tokens</div>
-                </div>
-
-                <div style={{ fontSize: 11, color: 'var(--muted-foreground)', display: 'flex', justifyContent: 'space-between' }}>
-                  <span>Unlock Date:</span>
-                  <span style={{ fontWeight: 700, color: 'var(--foreground)' }}>
-                    {lk.isBurntPermanently ? 'Permanent' : new Date(lk.unlockTimestamp).toLocaleDateString()}
-                  </span>
-                </div>
+          <div style={{ display: 'grid', gridTemplateColumns: isMobile ? '1fr' : '2fr 1fr', gap: 12 }}>
+            <div>
+              <label style={{ display: 'block', fontSize: 12.5, fontWeight: 700, color: 'var(--foreground)', marginBottom: 6 }}>
+                {language === 'ko' ? '초기 발행 수량 (Initial Supply)' : 'Initial Supply'}
+              </label>
+              <div className="uniswap-input-box" style={{ padding: '0.75rem 1rem' }}>
+                <input
+                  type="text"
+                  placeholder="1000000"
+                  value={supply}
+                  onChange={(e) => setSupply(e.target.value.replace(/[^0-9]/g, ''))}
+                  style={{ width: '100%', background: 'transparent', border: 'none', outline: 'none', color: 'var(--foreground)', fontSize: 14, fontWeight: 600 }}
+                />
               </div>
-            ))}
+            </div>
+
+            <div>
+              <label style={{ display: 'block', fontSize: 12.5, fontWeight: 700, color: 'var(--foreground)', marginBottom: 6 }}>
+                {language === 'ko' ? '소수점 (Decimals)' : 'Decimals'}
+              </label>
+              <div className="uniswap-input-box" style={{ padding: '0.75rem 1rem' }}>
+                <input
+                  type="number"
+                  value={decimals}
+                  onChange={(e) => setDecimals(parseInt(e.target.value) || 18)}
+                  style={{ width: '100%', background: 'transparent', border: 'none', outline: 'none', color: 'var(--foreground)', fontSize: 14, fontWeight: 600 }}
+                />
+              </div>
+            </div>
           </div>
-        </div>
-      )}
 
-      {/* Modal: Create Fair Launch Token */}
-      {showCreateFairTokenModal && (
-        <div onClick={() => setShowCreateFairTokenModal(false)} style={{ position: 'fixed', inset: 0, background: 'rgba(0,0,0,0.6)', backdropFilter: 'blur(8px)', zIndex: 1000, display: 'flex', alignItems: 'center', justifyContent: 'center', padding: 16 }}>
-          <div onClick={(e) => e.stopPropagation()} style={{ width: '100%', maxWidth: 440, background: 'var(--card)', border: '1px solid var(--border)', borderRadius: 20, padding: 24 }}>
-            <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: 16 }}>
-              <div style={{ fontSize: 16, fontWeight: 800, color: 'var(--foreground)' }}>Launch Token on Bonding Curve</div>
-              <button onClick={() => setShowCreateFairTokenModal(false)} style={{ background: 'none', border: 'none', fontSize: 18, color: 'var(--muted-foreground)', cursor: 'pointer' }}>✕</button>
-            </div>
-
-            <div style={{ display: 'flex', flexDirection: 'column', gap: 12, marginBottom: 16 }}>
-              <div>
-                <label style={{ fontSize: 11, fontWeight: 700, color: 'var(--muted-foreground)', display: 'block', marginBottom: 4 }}>Emoji / Icon</label>
-                <input type="text" value={fairIcon} onChange={(e) => setFairIcon(e.target.value)} style={{ width: '100%', background: 'var(--muted)', border: '1px solid var(--border)', borderRadius: 10, padding: '8px 12px', fontSize: 16, color: 'var(--foreground)', outline: 'none' }} />
+          {/* Anti-Snipe Extra Settings */}
+          {tokenType === 'ANTI_SNIPE' && (
+            <div style={{ background: 'var(--secondary)', padding: '1.25rem', borderRadius: 14, border: '1px solid var(--border)', display: 'flex', flexDirection: 'column', gap: 14 }}>
+              <div style={{ display: 'flex', alignItems: 'center', gap: 6, fontSize: 13, fontWeight: 700, color: 'var(--primary)' }}>
+                <ShieldCheck size={16} />
+                <span>Anti-Snipe Guard Parameters</span>
               </div>
-              <div>
-                <label style={{ fontSize: 11, fontWeight: 700, color: 'var(--muted-foreground)', display: 'block', marginBottom: 4 }}>Token Name</label>
-                <input type="text" placeholder="e.g. Hanok Shiba" value={fairName} onChange={(e) => setFairName(e.target.value)} style={{ width: '100%', background: 'var(--muted)', border: '1px solid var(--border)', borderRadius: 10, padding: '8px 12px', fontSize: 13, color: 'var(--foreground)', outline: 'none' }} />
-              </div>
-              <div>
-                <label style={{ fontSize: 11, fontWeight: 700, color: 'var(--muted-foreground)', display: 'block', marginBottom: 4 }}>Token Symbol</label>
-                <input type="text" placeholder="e.g. HSHIB" value={fairSymbol} onChange={(e) => setFairSymbol(e.target.value)} style={{ width: '100%', background: 'var(--muted)', border: '1px solid var(--border)', borderRadius: 10, padding: '8px 12px', fontSize: 13, color: 'var(--foreground)', outline: 'none' }} />
-              </div>
-              <div>
-                <label style={{ fontSize: 11, fontWeight: 700, color: 'var(--muted-foreground)', display: 'block', marginBottom: 4 }}>Description</label>
-                <textarea rows={2} placeholder="Describe your community token..." value={fairDesc} onChange={(e) => setFairDesc(e.target.value)} style={{ width: '100%', background: 'var(--muted)', border: '1px solid var(--border)', borderRadius: 10, padding: '8px 12px', fontSize: 13, color: 'var(--foreground)', outline: 'none', resize: 'none' }} />
-              </div>
-            </div>
-
-            <button onClick={handleCreateFairToken} style={{ width: '100%', padding: '12px', borderRadius: 12, border: 'none', background: 'var(--primary)', color: '#fff', fontSize: 14, fontWeight: 800, cursor: 'pointer' }}>
-              Launch Fair Token (0 ETH Initial Pool)
-            </button>
-          </div>
-        </div>
-      )}
-
-      {/* Modal: Buy on Bonding Curve */}
-      {selectedTokenForBuy && (
-        <div onClick={() => setSelectedTokenForBuy(null)} style={{ position: 'fixed', inset: 0, background: 'rgba(0,0,0,0.6)', backdropFilter: 'blur(8px)', zIndex: 1000, display: 'flex', alignItems: 'center', justifyContent: 'center', padding: 16 }}>
-          <div onClick={(e) => e.stopPropagation()} style={{ width: '100%', maxWidth: 440, background: 'var(--card)', border: '1px solid var(--border)', borderRadius: 20, padding: 24 }}>
-            <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: 16 }}>
-              <div style={{ fontSize: 16, fontWeight: 800, color: 'var(--foreground)' }}>Buy ${selectedTokenForBuy.symbol} on Curve</div>
-              <button onClick={() => setSelectedTokenForBuy(null)} style={{ background: 'none', border: 'none', fontSize: 18, color: 'var(--muted-foreground)', cursor: 'pointer' }}>✕</button>
-            </div>
-
-            <div style={{ background: 'var(--muted)', padding: 14, borderRadius: 14, marginBottom: 16 }}>
-              <div style={{ fontSize: 11, color: 'var(--muted-foreground)', marginBottom: 4 }}>You Pay (ETH)</div>
-              <input type="number" value={buyEthAmount} onChange={(e) => setBuyEthAmount(e.target.value)} style={{ width: '100%', background: 'none', border: 'none', fontSize: 22, fontWeight: 800, color: 'var(--foreground)', outline: 'none' }} />
-            </div>
-
-            <button onClick={handleBuyOnCurve} style={{ width: '100%', padding: '12px', borderRadius: 12, border: 'none', background: 'var(--primary)', color: '#fff', fontSize: 14, fontWeight: 800, cursor: 'pointer' }}>
-              Confirm Curve Buy
-            </button>
-          </div>
-        </div>
-      )}
-
-      {/* Modal: Create LP Lock / Burn */}
-      {showLockModal && (
-        <div onClick={() => setShowLockModal(false)} style={{ position: 'fixed', inset: 0, background: 'rgba(0,0,0,0.6)', backdropFilter: 'blur(8px)', zIndex: 1000, display: 'flex', alignItems: 'center', justifyContent: 'center', padding: 16 }}>
-          <div onClick={(e) => e.stopPropagation()} style={{ width: '100%', maxWidth: 440, background: 'var(--card)', border: '1px solid var(--border)', borderRadius: 20, padding: 24 }}>
-            <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: 16 }}>
-              <div style={{ fontSize: 16, fontWeight: 800, color: 'var(--foreground)' }}>Lock or Burn Liquidity</div>
-              <button onClick={() => setShowLockModal(false)} style={{ background: 'none', border: 'none', fontSize: 18, color: 'var(--muted-foreground)', cursor: 'pointer' }}>✕</button>
-            </div>
-
-            <div style={{ display: 'flex', flexDirection: 'column', gap: 12, marginBottom: 16 }}>
-              <div>
-                <label style={{ fontSize: 11, fontWeight: 700, color: 'var(--muted-foreground)', display: 'block', marginBottom: 4 }}>Pool Pair</label>
-                <input type="text" value={lockPoolName} onChange={(e) => setLockPoolName(e.target.value)} style={{ width: '100%', background: 'var(--muted)', border: '1px solid var(--border)', borderRadius: 10, padding: '8px 12px', fontSize: 13, color: 'var(--foreground)', outline: 'none' }} />
-              </div>
-              <div>
-                <label style={{ fontSize: 11, fontWeight: 700, color: 'var(--muted-foreground)', display: 'block', marginBottom: 4 }}>LP Amount to Lock</label>
-                <input type="number" value={lockAmountLP} onChange={(e) => setLockAmountLP(e.target.value)} style={{ width: '100%', background: 'var(--muted)', border: '1px solid var(--border)', borderRadius: 10, padding: '8px 12px', fontSize: 13, color: 'var(--foreground)', outline: 'none' }} />
-              </div>
-
-              <div>
-                <label style={{ display: 'flex', alignItems: 'center', gap: 8, fontSize: 12, fontWeight: 700, color: 'var(--foreground)', cursor: 'pointer' }}>
-                  <input type="checkbox" checked={isPermanentBurn} onChange={(e) => setIsPermanentBurn(e.target.checked)} style={{ accentColor: '#ef4444', width: 16, height: 16 }} />
-                  <span>🔥 Burn Permanently to 0xDead (Irreversible)</span>
-                </label>
-              </div>
-
-              {!isPermanentBurn && (
+              <div style={{ display: 'grid', gridTemplateColumns: isMobile ? '1fr' : '1fr 1fr', gap: 14 }}>
                 <div>
-                  <label style={{ fontSize: 11, fontWeight: 700, color: 'var(--muted-foreground)', display: 'block', marginBottom: 4 }}>Lock Duration</label>
+                  <span style={{ fontSize: 11.5, color: 'var(--muted-foreground)', display: 'block', marginBottom: 6 }}>Max Wallet Limit:</span>
                   <div style={{ display: 'flex', gap: 6 }}>
-                    {[90, 180, 365, 730].map((d) => (
+                    {[
+                      { label: '1.0%', val: 100 },
+                      { label: '2.0%', val: 200 },
+                      { label: '5.0%', val: 500 },
+                    ].map((opt) => (
                       <button
-                        key={d}
-                        onClick={() => setLockDurationDays(d)}
+                        key={opt.val}
+                        type="button"
+                        onClick={() => setMaxWalletBps(opt.val)}
                         style={{
                           flex: 1,
                           padding: '6px 0',
                           borderRadius: 8,
-                          border: lockDurationDays === d ? '1px solid var(--primary)' : '1px solid var(--border)',
-                          background: lockDurationDays === d ? 'var(--primary)' : 'var(--muted)',
-                          color: lockDurationDays === d ? '#fff' : 'var(--foreground)',
-                          fontSize: 11,
+                          border: maxWalletBps === opt.val ? '1px solid var(--primary)' : '1px solid var(--border)',
+                          background: maxWalletBps === opt.val ? 'var(--accent)' : 'var(--input)',
+                          color: maxWalletBps === opt.val ? 'var(--primary)' : 'var(--foreground)',
+                          fontSize: 12,
                           fontWeight: 700,
                           cursor: 'pointer',
                         }}
                       >
-                        {d >= 365 ? `${d / 365}Y` : `${d / 30}M`}
+                        {opt.label}
                       </button>
                     ))}
                   </div>
+                  <div style={{ fontSize: 11.5, color: 'var(--muted-foreground)', marginTop: 6 }}>
+                    Limit: {((parseFloat(supply || '0') * maxWalletBps) / 10000).toLocaleString()} ${symbol || 'TOK'}
+                  </div>
                 </div>
-              )}
-            </div>
 
-            <button onClick={handleCreateLock} style={{ width: '100%', padding: '12px', borderRadius: 12, border: 'none', background: isPermanentBurn ? '#ef4444' : 'var(--primary)', color: '#fff', fontSize: 14, fontWeight: 800, cursor: 'pointer' }}>
-              {isPermanentBurn ? 'Confirm LP Burn (0xDead)' : `Lock LP for ${lockDurationDays} Days`}
-            </button>
+                <div>
+                  <span style={{ fontSize: 11.5, color: 'var(--muted-foreground)', display: 'block', marginBottom: 6 }}>Max TX Limit:</span>
+                  <div style={{ display: 'flex', gap: 6 }}>
+                    {[
+                      { label: '0.5%', val: 50 },
+                      { label: '1.0%', val: 100 },
+                      { label: '2.0%', val: 200 },
+                    ].map((opt) => (
+                      <button
+                        key={opt.val}
+                        type="button"
+                        onClick={() => setMaxTxBps(opt.val)}
+                        style={{
+                          flex: 1,
+                          padding: '6px 0',
+                          borderRadius: 8,
+                          border: maxTxBps === opt.val ? '1px solid var(--primary)' : '1px solid var(--border)',
+                          background: maxTxBps === opt.val ? 'var(--accent)' : 'var(--input)',
+                          color: maxTxBps === opt.val ? 'var(--primary)' : 'var(--foreground)',
+                          fontSize: 12,
+                          fontWeight: 700,
+                          cursor: 'pointer',
+                        }}
+                      >
+                        {opt.label}
+                      </button>
+                    ))}
+                  </div>
+                  <div style={{ fontSize: 11.5, color: 'var(--muted-foreground)', marginTop: 6 }}>
+                    Limit: {((parseFloat(supply || '0') * maxTxBps) / 10000).toLocaleString()} ${symbol || 'TOK'}
+                  </div>
+                </div>
+              </div>
+            </div>
+          )}
+
+          {/* Deploy CTA Button */}
+          <button
+            onClick={handleDeployToken}
+            disabled={isDeploying}
+            className="uniswap-btn-primary"
+            style={{
+              padding: '1rem',
+              fontSize: 15,
+              fontWeight: 800,
+              cursor: isDeploying ? 'not-allowed' : 'pointer',
+              opacity: isDeploying ? 0.7 : 1,
+              marginTop: 6,
+            }}
+          >
+            {isDeploying ? (statusMsg || 'Deploying Contract on GIWA...') : (language === 'ko' ? 'GIWA Sepolia에 토큰 배포하기' : 'Deploy Token on GIWA Sepolia')}
+          </button>
+        </div>
+      </div>
+
+      {/* Previously Deployed Tokens By User */}
+      {myTokens.length > 0 && (
+        <div className="uniswap-card" style={{ padding: '1.5rem' }}>
+          <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', marginBottom: '1rem' }}>
+            <div style={{ display: 'flex', alignItems: 'center', gap: 8 }}>
+              <Layers size={16} color="var(--primary)" />
+              <h3 style={{ fontSize: 16, fontWeight: 800, color: 'var(--foreground)' }}>
+                {language === 'ko' ? '내 배포된 토큰 목록' : 'My Deployed Tokens on GIWA'}
+              </h3>
+            </div>
+            <span style={{ fontSize: 12, color: 'var(--muted-foreground)', fontWeight: 600 }}>
+              {myTokens.length} {myTokens.length === 1 ? 'Token' : 'Tokens'}
+            </span>
+          </div>
+
+          <div style={{ display: 'flex', flexDirection: 'column', gap: 10 }}>
+            {myTokens.map((t) => (
+              <div
+                key={t.address}
+                style={{
+                  background: 'var(--input)',
+                  padding: '12px 16px',
+                  borderRadius: 14,
+                  border: '1px solid var(--border)',
+                  display: 'flex',
+                  justifyContent: 'space-between',
+                  alignItems: 'center',
+                  flexWrap: 'wrap',
+                  gap: 10,
+                }}
+              >
+                <div>
+                  <div style={{ display: 'flex', alignItems: 'center', gap: 8 }}>
+                    <span style={{ fontSize: 14.5, fontWeight: 800, color: 'var(--foreground)' }}>
+                      ${t.symbol}
+                    </span>
+                    <span style={{ fontSize: 12, color: 'var(--muted-foreground)' }}>
+                      {t.name}
+                    </span>
+                    <span style={{ fontSize: 10.5, fontWeight: 700, padding: '2px 6px', borderRadius: 999, background: t.type === 'ANTI_SNIPE' ? 'rgba(255, 90, 54, 0.15)' : 'var(--secondary)', color: t.type === 'ANTI_SNIPE' ? 'var(--primary)' : 'var(--muted-foreground)' }}>
+                      {t.type}
+                    </span>
+                  </div>
+                  <div style={{ fontSize: 11.5, fontFamily: 'var(--font-mono)', color: 'var(--muted-foreground)', marginTop: 4 }}>
+                    {t.address}
+                  </div>
+                </div>
+
+                <div style={{ display: 'flex', alignItems: 'center', gap: 8 }}>
+                  <button
+                    onClick={() => copyToClipboard(t.address)}
+                    style={{ background: 'var(--secondary)', border: '1px solid var(--border)', padding: '6px 10px', borderRadius: 8, color: 'var(--foreground)', cursor: 'pointer', display: 'flex', alignItems: 'center', gap: 4, fontSize: 11.5, fontWeight: 600 }}
+                  >
+                    {copiedAddr === t.address ? <Check size={12} color="#22c55e" /> : <Copy size={12} />}
+                    <span>{copiedAddr === t.address ? 'Copied' : 'Copy'}</span>
+                  </button>
+
+                  <button
+                    onClick={() => handleAddTokenToWallet(t)}
+                    style={{ background: 'var(--secondary)', border: '1px solid var(--border)', padding: '6px 10px', borderRadius: 8, color: 'var(--foreground)', cursor: 'pointer', display: 'flex', alignItems: 'center', gap: 4, fontSize: 11.5, fontWeight: 600 }}
+                  >
+                    <Coins size={12} color="var(--primary)" />
+                    <span>Wallet</span>
+                  </button>
+
+                  <a
+                    href={`https://sepolia-explorer.giwa.io/address/${t.address}`}
+                    target="_blank"
+                    rel="noopener noreferrer"
+                    style={{ background: 'var(--secondary)', border: '1px solid var(--border)', padding: '6px 10px', borderRadius: 8, color: 'var(--foreground)', display: 'flex', alignItems: 'center', gap: 4, fontSize: 11.5, fontWeight: 600, textDecoration: 'none' }}
+                  >
+                    <span>Explorer</span>
+                    <ExternalLink size={12} />
+                  </a>
+                </div>
+              </div>
+            ))}
           </div>
         </div>
       )}

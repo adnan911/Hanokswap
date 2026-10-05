@@ -1,3 +1,5 @@
+import type { GiwaPoolData } from '../hooks/useGiwaPools';
+
 export interface PositionPnLMetrics {
   positionId: string;
   poolName: string;
@@ -43,71 +45,44 @@ export function calculateImpermanentLoss(entryPrice: number, currentPrice: numbe
   return { ilPct, multiplier };
 }
 
-export const MOCK_USER_POSITIONS: PositionPnLMetrics[] = [
-  {
-    positionId: 'pos-weth-usdc-01',
-    poolName: 'WETH / USDC Concentrated Vault',
-    token0Symbol: 'WETH',
-    token1Symbol: 'USDC',
-    entryPrice: 2850.0,
-    currentPrice: 3150.0,
-    initialDepositUSD: 10000.0,
-    currentValueUSD: 10488.0,
-    uncollectedFeesUSD: 384.5,
-    hodlValueUSD: 10526.0,
-    impermanentLossPct: -0.36,
-    impermanentLossUSD: -38.0,
-    netPnlUSD: +872.5, // currentValue + fees - initialDeposit
-    netRoiPct: +8.72,
-    aprPercent: 24.5,
-    isALMVault: true,
-    vaultStrategy: 'CONCENTRATED',
-  },
-  {
-    positionId: 'pos-krwc-fx-02',
-    poolName: 'KRWC / USDC Deep FX Stable Vault',
-    token0Symbol: 'KRWC',
-    token1Symbol: 'USDC',
-    entryPrice: 0.000714,
-    currentPrice: 0.000715,
-    initialDepositUSD: 25000.0,
-    currentValueUSD: 25010.0,
-    uncollectedFeesUSD: 612.0,
-    hodlValueUSD: 25010.0,
-    impermanentLossPct: -0.001,
-    impermanentLossUSD: -0.25,
-    netPnlUSD: +622.0,
-    netRoiPct: +2.48,
-    aprPercent: 14.8,
-    isALMVault: true,
-    vaultStrategy: 'BALANCED',
-  },
-  {
-    positionId: 'pos-hanok-eth-03',
-    poolName: 'HANOK / WETH Governance Pool',
-    token0Symbol: 'HANOK',
-    token1Symbol: 'WETH',
-    entryPrice: 0.000062,
-    currentPrice: 0.000079,
-    initialDepositUSD: 5000.0,
-    currentValueUSD: 5580.0,
-    uncollectedFeesUSD: 420.0,
-    hodlValueUSD: 5685.0,
-    impermanentLossPct: -1.85,
-    impermanentLossUSD: -105.0,
-    netPnlUSD: +1000.0,
-    netRoiPct: +20.0,
-    aprPercent: 48.6,
-    isALMVault: false,
-  },
-];
+/**
+ * Derives user's active LP positions from live on-chain GIWA pools
+ */
+export function derivePositionsFromPools(pools: GiwaPoolData[]): PositionPnLMetrics[] {
+  const result: PositionPnLMetrics[] = [];
 
-export function getPortfolioPositions(_userAddress?: string): PositionPnLMetrics[] {
-  return MOCK_USER_POSITIONS;
+  for (const p of pools) {
+    if (p.userPosition && parseFloat(p.userPosition.liquidity) > 0) {
+      const share = parseFloat(p.userPosition.sharePercent || '0') / 100;
+      const currentValueUSD = p.tvlUsd * share;
+      const estPrice = parseFloat(p.currentPrice) || 1;
+
+      result.push({
+        positionId: `pos-${p.address.slice(2, 10)}`,
+        poolName: p.name,
+        token0Symbol: p.symbol0,
+        token1Symbol: p.symbol1,
+        entryPrice: estPrice,
+        currentPrice: estPrice,
+        initialDepositUSD: currentValueUSD,
+        currentValueUSD,
+        uncollectedFeesUSD: 0,
+        hodlValueUSD: currentValueUSD,
+        impermanentLossPct: 0,
+        impermanentLossUSD: 0,
+        netPnlUSD: 0,
+        netRoiPct: 0,
+        aprPercent: p.estimatedApy || 0,
+        isALMVault: false,
+      });
+    }
+  }
+
+  return result;
 }
 
 export function getAggregatePortfolioSummary(
-  positions: PositionPnLMetrics[] = MOCK_USER_POSITIONS,
+  positions: PositionPnLMetrics[] = [],
   fxRateUSD_KRW: number = 1400
 ): PortfolioAggregateSummary {
   let totalDepositedUSD = 0;

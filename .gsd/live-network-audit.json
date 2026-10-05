@@ -1,25 +1,25 @@
 {
-  "checkedAt": "2026-10-01T19:30:51.782Z",
+  "checkedAt": "2026-10-05T04:55:35.943Z",
   "chainId": 91342,
   "records": [
     {
       "name": "GIWA_DEX_FACTORY",
-      "address": "0xde7e4fdaaef35680adb15f026a5087801366c316",
+      "address": "0x61B268c494949550A70bE68eE1d0142b7342C4CC",
       "deployed": true
     },
     {
       "name": "GIWA_DEX_ROUTER",
-      "address": "0xb8b68746130e71b9f9d7b6af2a69d221ecc7e78f",
+      "address": "0xEB75E64De5b487E17F766946fb6870e81d1e3a2E",
       "deployed": true
     },
     {
       "name": "GIWA_POOL_WETH_USDC",
-      "address": "0xE9c27006b15E681C0edE87a37Bbb678E7F201F7C",
+      "address": "0x8E80F917Cf7CC54bD83A746780bA93E22c173570",
       "deployed": true
     },
     {
       "name": "GIWA_POOL_USDC_EURC",
-      "address": "0xd618c9bFED8DdfB7Eed03450940B62E2E3cb91b1",
+      "address": "0xa2a0FB6706D356b60F62f36FA5A31865E60D72e8",
       "deployed": true
     },
     {
@@ -29,18 +29,18 @@
     },
     {
       "name": "USDC_ADDRESS",
-      "address": "0x3600000000000000000000000000000000000000",
-      "deployed": false
+      "address": "0x8A2e4292823DCF10f7e3E72263A639Ee58742159",
+      "deployed": true
     },
     {
       "name": "EURC_ADDRESS",
-      "address": "0x89B50855Aa3bE2F677cD6303Cec089B5F319D72a",
-      "deployed": false
+      "address": "0xaB4a8f8e103E1bea55Bac9158A6e670D1cB2AdEb",
+      "deployed": true
     },
     {
       "name": "KRWC_ADDRESS",
-      "address": "0x89C0000000000000000000000000000000000001",
-      "deployed": false
+      "address": "0x9a0E572DaE28abFd0de5239c5a1Ac2b6BaaC9956",
+      "deployed": true
     },
     {
       "name": "GIWA_DOJANG_SCROLL",
@@ -59,7 +59,7 @@
     }
   ],
   "routerReads": {
-    "factory": "0xDe7E4FdAAeF35680ADB15f026a5087801366C316",
-    "permit2": "The contract function \"permit2\" reverted."
+    "factory": "0x61B268c494949550A70bE68eE1d0142b7342C4CC",
+    "permit2": "0x000000000022D473030F116dDEE9F6B43aC78BA3"
   }
 }

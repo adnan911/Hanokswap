@@ -57,10 +57,15 @@ function getStoredAttestations(): Record<string, DojangAttestation[]> {
 
 export function normalizeUpId(name: string): string {
   let cleaned = name.trim().toLowerCase();
-  if (!cleaned.endsWith(".up.id")) {
-    cleaned = `${cleaned}.up.id`;
+  while (cleaned.endsWith(".up.id")) {
+    cleaned = cleaned.slice(0, -6);
   }
-  return cleaned;
+  return `${cleaned}.up.id`;
+}
+
+export function formatUpIdDisplay(name: string | null | undefined): string {
+  if (!name) return "";
+  return normalizeUpId(name);
 }
 
 /**

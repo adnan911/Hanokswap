@@ -6,7 +6,13 @@ export const SWAP_ROUTER_ABI = parseAbi([
   'function exactInputMultiHop(((address tokenIn,address tokenOut,uint24 fee,bool isStable,uint160 sqrtPriceLimitX96)[] hops,address recipient,uint256 deadline,uint256 amountIn,uint256 amountOutMinimum) params) payable returns (uint256 amountOut)',
 ]);
 
-export function buildSwapParams(route: SORRoute, recipient: Address, decimalsIn: number, deadline: bigint) {
+export function buildSwapParams(
+  route: SORRoute,
+  recipient: Address,
+  decimalsIn: number,
+  deadline: bigint,
+  minAmountOut: bigint = 1n
+) {
   const amountIn = parseUnits(route.amountIn, decimalsIn);
   if (amountIn <= 0n || route.path.length === 0) throw new Error('Enter a positive swap amount.');
   const hops = route.path.map(hop => ({
@@ -20,7 +26,7 @@ export function buildSwapParams(route: SORRoute, recipient: Address, decimalsIn:
     if (hops[i].tokenIn.toLowerCase() === hops[i].tokenOut.toLowerCase()) throw new Error('Choose two different assets.');
     if (i > 0 && hops[i - 1].tokenOut.toLowerCase() !== hops[i].tokenIn.toLowerCase()) throw new Error('Invalid swap route.');
   }
-  return { hops, recipient, deadline, amountIn, amountOutMinimum: 1n };
+  return { hops, recipient, deadline, amountIn, amountOutMinimum: minAmountOut > 0n ? minAmountOut : 1n };
 }
 
 export function minimumSwapOutput(quotedOutput: bigint, slippagePercent: number): bigint {
